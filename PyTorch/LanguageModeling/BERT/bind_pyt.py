@@ -11,13 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
 import subprocess
-import os
-import socket
 from argparse import ArgumentParser, REMAINDER
 
-import torch
 
 
 def parse_args():
@@ -72,14 +70,15 @@ def parse_args():
     parser.add_argument('training_script_args', nargs=REMAINDER)
     return parser.parse_args()
 
+
 def main():
     args = parse_args()
 
     # variables for numactrl binding
-    
-    
+
     NSOCKETS = args.nsockets_per_node
-    NGPUS_PER_SOCKET = (args.nproc_per_node // args.nsockets_per_node) + (1 if (args.nproc_per_node % args.nsockets_per_node) else 0)
+    NGPUS_PER_SOCKET = (args.nproc_per_node // args.nsockets_per_node) + (
+        1 if (args.nproc_per_node % args.nsockets_per_node) else 0)
     NCORES_PER_GPU = args.ncores_per_socket // NGPUS_PER_SOCKET
 
     # world size in terms of number of processes
@@ -100,29 +99,24 @@ def main():
 
         # form numactrl binding command
         cpu_ranges = [local_rank * NCORES_PER_GPU,
-                     (local_rank + 1) * NCORES_PER_GPU - 1,
-                     local_rank * NCORES_PER_GPU + (NCORES_PER_GPU * NGPUS_PER_SOCKET * NSOCKETS),
-                     (local_rank + 1) * NCORES_PER_GPU + (NCORES_PER_GPU * NGPUS_PER_SOCKET * NSOCKETS) - 1]
+                      (local_rank + 1) * NCORES_PER_GPU - 1,
+                      local_rank * NCORES_PER_GPU + (NCORES_PER_GPU * NGPUS_PER_SOCKET * NSOCKETS),
+                      (local_rank + 1) * NCORES_PER_GPU + (NCORES_PER_GPU * NGPUS_PER_SOCKET * NSOCKETS) - 1]
 
         numactlargs = []
         if args.no_hyperthreads:
-            numactlargs += [ "--physcpubind={}-{}".format(*cpu_ranges[0:2]) ]
+            numactlargs += ["--physcpubind={}-{}".format(*cpu_ranges[0:2])]
         else:
-            numactlargs += [ "--physcpubind={}-{},{}-{}".format(*cpu_ranges) ]
+            numactlargs += ["--physcpubind={}-{},{}-{}".format(*cpu_ranges)]
 
         if not args.no_membind:
             memnode = local_rank // NGPUS_PER_SOCKET
-            numactlargs += [ "--membind={}".format(memnode) ]
+            numactlargs += ["--membind={}".format(memnode)]
 
         # spawn the processes
-        cmd = [ "/usr/bin/numactl" ] \
-            + numactlargs \
-            + [ sys.executable,
-                "-u",
-                args.training_script,
-                "--local_rank={}".format(local_rank)
-              ] \
-            + args.training_script_args
+        cmd = ["/usr/bin/numactl"] + numactlargs + [
+            sys.executable, "-u", args.training_script, "--local_rank={}".format(local_rank)
+        ] + args.training_script_args
 
         process = subprocess.Popen(cmd, env=current_env)
         processes.append(process)
@@ -133,5 +127,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

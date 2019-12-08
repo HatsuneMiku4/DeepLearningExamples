@@ -37,6 +37,7 @@ from tqdm import tqdm
 try:
     from urllib.parse import urlparse
 except ImportError:
+    # noinspection PyUnresolvedReferences
     from urlparse import urlparse
 
 try:
@@ -179,7 +180,7 @@ def http_get(url, temp_file):
     total = int(content_length) if content_length is not None else None
     progress = tqdm(unit="B", total=total)
     for chunk in req.iter_content(chunk_size=1024):
-        if chunk: # filter out keep-alive new chunks
+        if chunk:  # filter out keep-alive new chunks
             progress.update(len(chunk))
             temp_file.write(chunk)
     progress.close()
@@ -246,10 +247,10 @@ def get_from_cache(url, cache_dir=None):
 
 
 def read_set_from_file(filename):
-    '''
+    """
     Extract a de-duped collection (set) of text from a file.
     Expected file format is one item per line.
-    '''
+    """
     collection = set()
     with open(filename, 'r', encoding='utf-8') as file_:
         for line in file_:

@@ -32,9 +32,9 @@ from torch.utils.data.distributed import DistributedSampler
 from tokenization import BertTokenizer
 from modeling import BertModel
 
-logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s', 
-                    datefmt = '%m/%d/%Y %H:%M:%S',
-                    level = logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -131,7 +131,7 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
 
         if ex_index < 5:
             logger.info("*** Example ***")
-            logger.info("unique_id: %s" % (example.unique_id))
+            logger.info("unique_id: %s" % example.unique_id)
             logger.info("tokens: %s" % " ".join([str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
@@ -175,7 +175,7 @@ def read_examples(input_file):
             if not line:
                 break
             line = line.strip()
-            text_a = None
+            # text_a = None
             text_b = None
             m = re.match(r"^(.*) \|\|\| (.*)$", line)
             if m is None:
@@ -204,12 +204,12 @@ def main():
     parser.add_argument("--layers", default="-1,-2,-3,-4", type=str)
     parser.add_argument("--max_seq_length", default=128, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences longer "
-                            "than this will be truncated, and sequences shorter than this will be padded.")
+                             "than this will be truncated, and sequences shorter than this will be padded.")
     parser.add_argument("--batch_size", default=32, type=int, help="Batch size for predictions.")
     parser.add_argument("--local_rank",
                         type=int,
                         default=-1,
-                        help = "local_rank for distributed training on gpus")
+                        help="local_rank for distributed training on gpus")
     parser.add_argument("--no_cuda",
                         action='store_true',
                         help="Whether not to use CUDA when available")

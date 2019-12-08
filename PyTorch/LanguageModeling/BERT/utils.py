@@ -11,8 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import torch.distributed as dist
+
 
 def get_rank():
     if not dist.is_available():
@@ -20,6 +20,7 @@ def get_rank():
     if not dist.is_initialized():
         return 0
     return dist.get_rank()
+
 
 def is_main_process():
     return get_rank() == 0

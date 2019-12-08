@@ -36,11 +36,11 @@ from tqdm import tqdm, trange
 
 from apex import amp
 from schedulers import LinearWarmUpScheduler
-from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
+# from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modeling import BertForQuestionAnswering, BertConfig, WEIGHTS_NAME, CONFIG_NAME
 from optimization import BertAdam, warmup_linear
 from tokenization import (BasicTokenizer, BertTokenizer, whitespace_tokenize)
-from utils import is_main_process
+from .utils import is_main_process
 
 if sys.version_info[0] == 2:
     import cPickle as pickle
@@ -80,16 +80,16 @@ class SquadExample(object):
 
     def __repr__(self):
         s = ""
-        s += "qas_id: %s" % (self.qas_id)
+        s += "qas_id: %s" % self.qas_id
         s += ", question_text: %s" % (
             self.question_text)
         s += ", doc_tokens: [%s]" % (" ".join(self.doc_tokens))
         if self.start_position:
-            s += ", start_position: %d" % (self.start_position)
+            s += ", start_position: %d" % self.start_position
         if self.end_position:
-            s += ", end_position: %d" % (self.end_position)
+            s += ", end_position: %d" % self.end_position
         if self.is_impossible:
-            s += ", is_impossible: %r" % (self.is_impossible)
+            s += ", is_impossible: %r" % self.is_impossible
         return s
 
 
@@ -322,9 +322,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 end_position = 0
             if example_index < 20:
                 logger.info("*** Example ***")
-                logger.info("unique_id: %s" % (unique_id))
-                logger.info("example_index: %s" % (example_index))
-                logger.info("doc_span_index: %s" % (doc_span_index))
+                logger.info("unique_id: %s" % unique_id)
+                logger.info("example_index: %s" % example_index)
+                logger.info("doc_span_index: %s" % doc_span_index)
                 logger.info("tokens: %s" % " ".join(tokens))
                 logger.info("token_to_orig_map: %s" % " ".join([
                     "%d:%d" % (x, y) for (x, y) in token_to_orig_map.items()]))
@@ -340,10 +340,10 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     logger.info("impossible example")
                 if is_training and not example.is_impossible:
                     answer_text = " ".join(tokens[start_position:(end_position + 1)])
-                    logger.info("start_position: %d" % (start_position))
-                    logger.info("end_position: %d" % (end_position))
+                    logger.info("start_position: %d" % start_position)
+                    logger.info("end_position: %d" % end_position)
                     logger.info(
-                        "answer: %s" % (answer_text))
+                        "answer: %s" % answer_text)
 
             features.append(
                 InputFeatures(
@@ -396,9 +396,9 @@ def _improve_answer_span(doc_tokens, input_start, input_end, tokenizer,
         for new_end in range(input_end, new_start - 1, -1):
             text_span = " ".join(doc_tokens[new_start:(new_end + 1)])
             if text_span == tok_answer_text:
-                return (new_start, new_end)
+                return new_start, new_end
 
-    return (input_start, input_end)
+    return input_start, input_end
 
 
 def _check_is_max_context(doc_spans, cur_span_index, position):
@@ -447,8 +447,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
                       output_nbest_file, output_null_log_odds_file, verbose_logging,
                       version_2_with_negative, null_score_diff_threshold):
     """Write final predictions to the json file and log-odds of null if needed."""
-    logger.info("Writing predictions to: %s" % (output_prediction_file))
-    logger.info("Writing nbest to: %s" % (output_nbest_file))
+    logger.info("Writing predictions to: %s" % output_prediction_file)
+    logger.info("Writing nbest to: %s" % output_nbest_file)
 
     example_index_to_features = collections.defaultdict(list)
     for feature in all_features:
@@ -671,7 +671,7 @@ def get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):
             ns_to_s_map[len(ns_chars)] = i
             ns_chars.append(c)
         ns_text = "".join(ns_chars)
-        return (ns_text, ns_to_s_map)
+        return ns_text, ns_to_s_map
 
     # We first tokenize `orig_text`, strip whitespace from the result
     # and `pred_text`, and check if they are the same length. If they are
@@ -766,6 +766,7 @@ def _compute_softmax(scores):
     return probs
 
 
+# noinspection PyUnresolvedReferences
 def main():
     parser = argparse.ArgumentParser()
 
@@ -897,12 +898,14 @@ def main():
             raise ValueError(
                 "If `do_predict` is True, then `predict_file` must be specified.")
 
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and os.listdir(args.output_dir)!=['logfile.txt']:
-        print("WARNING: Output directory {} already exists and is not empty.".format(args.output_dir), os.listdir(args.output_dir))
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and os.listdir(
+            args.output_dir) != ['logfile.txt']:
+        print("WARNING: Output directory {} already exists and is not empty.".format(args.output_dir),
+              os.listdir(args.output_dir))
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    tokenizer = BertTokenizer(args.vocab_file, do_lower_case=args.do_lower_case, max_len=512) # for bert large
+    tokenizer = BertTokenizer(args.vocab_file, do_lower_case=args.do_lower_case, max_len=512)  # for bert large
     # tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
     train_examples = None
@@ -923,7 +926,7 @@ def main():
 
     model = BertForQuestionAnswering(config)
     # model = BertForQuestionAnswering.from_pretrained(args.bert_model,
-                # cache_dir=os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed_{}'.format(args.local_rank)))
+    # cache_dir=os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed_{}'.format(args.local_rank)))
     if is_main_process():
         print("LOADING CHECKOINT")
     model.load_state_dict(torch.load(args.init_checkpoint, map_location='cpu')["model"], strict=False)
@@ -969,17 +972,19 @@ def main():
                 if args.old:
                     optimizer = FP16_Optimizer(optimizer, static_loss_scale=args.loss_scale)
                 else:
-                    model, optimizer = amp.initialize(model, optimizer, opt_level="O2", keep_batchnorm_fp32=False, loss_scale=args.loss_scale)
+                    model, optimizer = amp.initialize(model, optimizer, opt_level="O2", keep_batchnorm_fp32=False,
+                                                      loss_scale=args.loss_scale)
             if not args.old and args.do_train:
-                scheduler = LinearWarmUpScheduler(optimizer, warmup=args.warmup_proportion, total_steps=num_train_optimization_steps)
+                scheduler = LinearWarmUpScheduler(optimizer, warmup=args.warmup_proportion,
+                                                  total_steps=num_train_optimization_steps)
 
         else:
             optimizer = BertAdam(optimizer_grouped_parameters,
-                                    lr=args.learning_rate,
-                                    warmup=args.warmup_proportion,
-                                    t_total=num_train_optimization_steps)
+                                 lr=args.learning_rate,
+                                 warmup=args.warmup_proportion,
+                                 t_total=num_train_optimization_steps)
 
-    #print(model)
+    # print(model)
     if args.local_rank != -1:
         try:
             from apex.parallel import DistributedDataParallel as DDP
@@ -996,7 +1001,7 @@ def main():
         cached_train_features_file = args.train_file + '_{0}_{1}_{2}_{3}'.format(
             list(filter(None, args.bert_model.split('/'))).pop(), str(args.max_seq_length), str(args.doc_stride),
             str(args.max_query_length))
-        train_features = None
+        # train_features = None
         try:
             with open(cached_train_features_file, "rb") as reader:
                 train_features = pickle.load(reader)
@@ -1034,7 +1039,7 @@ def main():
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 # Terminate early for benchmarking
-                
+
                 if args.max_steps > 0 and global_step > args.max_steps:
                     break
 
@@ -1048,6 +1053,7 @@ def main():
                     loss = loss / args.gradient_accumulation_steps
                 if args.fp16:
                     if args.old:
+                        # noinspection PyUnboundLocalVariable
                         optimizer.backward(loss)
                     else:
                         with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -1059,12 +1065,14 @@ def main():
                 # else:
                 #    loss.backward()
                 if (step + 1) % args.gradient_accumulation_steps == 0:
-                    if args.fp16 :
+                    if args.fp16:
                         # modify learning rate with special warm up for BERT which FusedAdam doesn't do
                         if not args.old:
+                            # noinspection PyUnboundLocalVariable
                             scheduler.step()
                         else:
-                            lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
+                            lr_this_step = args.learning_rate * warmup_linear(
+                                global_step / num_train_optimization_steps, args.warmup_proportion)
                             for param_group in optimizer.param_groups:
                                 param_group['lr'] = lr_this_step
 
@@ -1091,7 +1099,6 @@ def main():
     #     model.load_state_dict(torch.load(output_model_file))
     # else:
     #     model = BertForQuestionAnswering.from_pretrained(args.bert_model)
-
 
     if args.do_predict and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
 

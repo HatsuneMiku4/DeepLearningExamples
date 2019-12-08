@@ -21,8 +21,8 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.optimizer import required
 from torch.nn.utils import clip_grad_norm_
-#from fused_adam_local import FusedAdam
-from apex.optimizers import FusedAdam
+# from fused_adam_local import FusedAdam
+# from apex.optimizers import FusedAdam
 from apex.multi_tensor_apply import multi_tensor_applier
 import amp_C
 
@@ -34,30 +34,33 @@ scale = amp_C.multi_tensor_scale
 
 def warmup_cosine(x, warmup=0.002):
     if x < warmup:
-        return x/warmup
+        return x / warmup
     return 0.5 * (1.0 + torch.cos(math.pi * x))
+
 
 def warmup_constant(x, warmup=0.002):
     if x < warmup:
-        return x/warmup
+        return x / warmup
     return 1.0
+
 
 def warmup_linear(x, warmup=0.002):
     if x < warmup:
-        return x/warmup
-    return max((x - 1. )/ (warmup - 1.), 0.)
-    
+        return x / warmup
+    return max((x - 1.) / (warmup - 1.), 0.)
+
+
 def warmup_poly(x, warmup=0.002, degree=0.5):
     if x < warmup:
-        return x/warmup
-    return (1.0 - x)**degree
+        return x / warmup
+    return (1.0 - x) ** degree
 
 
 SCHEDULES = {
-    'warmup_cosine':warmup_cosine,
-    'warmup_constant':warmup_constant,
-    'warmup_linear':warmup_linear,
-    'warmup_poly':warmup_poly,
+    'warmup_cosine': warmup_cosine,
+    'warmup_constant': warmup_constant,
+    'warmup_linear': warmup_linear,
+    'warmup_poly': warmup_poly,
 }
 
 
@@ -75,6 +78,7 @@ class BertLAMB(Optimizer):
         weight_decay: Weight decay. Default: 0.01
         max_grad_norm: Maximum global norm for the gradients. Default: 1.0
     """
+
     def __init__(self, params, lr=required, warmup=-1, t_total=-1, schedule='warmup_poly',
                  b1=0.9, b2=0.999, e=1e-6, weight_decay=0.01,
                  max_grad_norm=1.0):
@@ -103,7 +107,7 @@ class BertLAMB(Optimizer):
         self.schedule = schedule
         self.warmup = warmup
         self.max_steps = t_total
-        self.updates_created=False
+        self.updates_created = False
 
     def get_lr(self):
         lr = []
@@ -114,57 +118,58 @@ class BertLAMB(Optimizer):
                     return [0]
                 if group['t_total'] != -1:
                     schedule_fct = SCHEDULES[group['schedule']]
-                    lr_scheduled = group['lr'] * schedule_fct(state['step']/group['t_total'], group['warmup'])
+                    lr_scheduled = group['lr'] * schedule_fct(state['step'] / group['t_total'], group['warmup'])
                 else:
                     lr_scheduled = group['lr']
                 lr.append(lr_scheduled)
         return lr
 
-    def apply_gradients(self, dummy_overflow_buf, lr_scheduled, per_param_decay, grad_list, param_list, momentum, velocity, update):
+    def apply_gradients(self, dummy_overflow_buf, lr_scheduled, per_param_decay, grad_list, param_list, momentum,
+                        velocity, update):
         # Compute global gradient norm
         global_grad_norm = multi_tensor_applier(
-                        multi_tensor_l2norm,
-                        dummy_overflow_buf,
-                        [grad_list],
-                        False)[0].item()
+            multi_tensor_l2norm,
+            dummy_overflow_buf,
+            [grad_list],
+            False)[0].item()
 
         # Compute per parameter norm
         param_norms = multi_tensor_applier(
-                        multi_tensor_l2norm,
-                        dummy_overflow_buf,
-                        [param_list],
-                        True)[1]
+            multi_tensor_l2norm,
+            dummy_overflow_buf,
+            [param_list],
+            True)[1]
 
         # Compute LAMB update
         multi_tensor_applier(
-                        lamb_compute_update,
-                        dummy_overflow_buf,
-                        [grad_list, param_list, momentum, velocity, update],
-                        torch.cuda.FloatTensor(per_param_decay),
-                        self.step_count,
-                        self.b1,
-                        self.b2,
-                        self.epsilon,
-                        global_grad_norm,
-                        self.max_global_grad_norm,
-                        )
+            lamb_compute_update,
+            dummy_overflow_buf,
+            [grad_list, param_list, momentum, velocity, update],
+            torch.cuda.FloatTensor(per_param_decay),
+            self.step_count,
+            self.b1,
+            self.b2,
+            self.epsilon,
+            global_grad_norm,
+            self.max_global_grad_norm,
+        )
 
         # Computer per parameter update norm
         update_norms = multi_tensor_applier(
-                        multi_tensor_l2norm,
-                        dummy_overflow_buf,
-                        [update],
-                        True)[1]
+            multi_tensor_l2norm,
+            dummy_overflow_buf,
+            [update],
+            True)[1]
 
         # Apply LAMB update on parameters
         multi_tensor_applier(
-                        lamb_apply_update,
-                        dummy_overflow_buf,
-                        [param_list, update],
-                        param_norms,
-                        update_norms,
-                        lr_scheduled,
-                        )
+            lamb_apply_update,
+            dummy_overflow_buf,
+            [param_list, update],
+            param_norms,
+            update_norms,
+            lr_scheduled,
+        )
 
     def step(self, closure=None):
         """Performs a single optimization step.
@@ -176,7 +181,7 @@ class BertLAMB(Optimizer):
         loss = None
         if closure is not None:
             loss = closure()
-        check = 1#torch.norm(all_grads, 2)
+        # check = 1  # torch.norm(all_grads, 2)
 
         grad_list = []
         param_list = []
@@ -190,9 +195,11 @@ class BertLAMB(Optimizer):
         fp16_per_param_decay = []
         fp16_momentum = []
         fp16_velocity = []
-        
+
         if not self.updates_created:
+            # noinspection PyAttributeOutsideInit
             self.update = []
+            # noinspection PyAttributeOutsideInit
             self.fp16_update = []
         for group in self.param_groups:
             for p in group['params']:
@@ -233,7 +240,7 @@ class BertLAMB(Optimizer):
                     fp16_momentum.append(state["momentum"])
                     fp16_velocity.append(state["velocity"])
                     if not self.updates_created:
-                        #self.fp16_update.append(torch.empty_like(p.data, dtype=torch.float32))
+                        # self.fp16_update.append(torch.empty_like(p.data, dtype=torch.float32))
                         # Use fp16 weights as temporary buffer for update term.
                         # This is safe because fp16 weights are overwritten after apply_gradients
                         self.fp16_update.append(p.data)
@@ -246,10 +253,11 @@ class BertLAMB(Optimizer):
                     if not self.updates_created:
                         self.update.append(torch.empty_like(p.data))
                 state['step'] += 1
-        self.updates_created=True
+        self.updates_created = True
         update = self.update
         fp16_update = self.fp16_update
 
+        # noinspection PyUnboundLocalVariable
         self.step_count = state['step']
         # Calculate learning rate from input schedule
         # if self.max_steps != -1:
@@ -263,16 +271,19 @@ class BertLAMB(Optimizer):
         overflow_buf = torch.cuda.IntTensor([0])
 
         if len(grad_list) > 0:
-            self.apply_gradients(overflow_buf, lr_scheduled, per_param_decay, grad_list, param_list, momentum, velocity, update)
+            self.apply_gradients(overflow_buf, lr_scheduled, per_param_decay, grad_list, param_list, momentum, velocity,
+                                 update)
         if len(fp16_grad_list) > 0:
-            self.apply_gradients(overflow_buf, lr_scheduled, fp16_per_param_decay, fp16_grad_list, fp32_param_list, fp16_momentum, fp16_velocity, fp16_update)
+            self.apply_gradients(overflow_buf, lr_scheduled, fp16_per_param_decay, fp16_grad_list, fp32_param_list,
+                                 fp16_momentum, fp16_velocity, fp16_update)
             multi_tensor_applier(
-                    scale,
-                    overflow_buf,
-                    [fp32_param_list, fp16_from_fp32_param_list],
-                    1.)
+                scale,
+                overflow_buf,
+                [fp32_param_list, fp16_from_fp32_param_list],
+                1.)
 
         return loss
+
 
 class BertAdam(Optimizer):
     """Implements BERT version of Adam algorithm with weight decay fix.
@@ -288,6 +299,7 @@ class BertAdam(Optimizer):
         weight_decay: Weight decay. Default: 0.01
         max_grad_norm: Maximum norm for the gradients (-1 means no clipping). Default: 1.0
     """
+
     def __init__(self, params, lr=required, warmup=-1, t_total=-1, schedule='warmup_linear',
                  b1=0.9, b2=0.999, e=1e-6, weight_decay=0.01,
                  max_grad_norm=1.0):
@@ -317,7 +329,7 @@ class BertAdam(Optimizer):
                     return [0]
                 if group['t_total'] != -1:
                     schedule_fct = SCHEDULES[group['schedule']]
-                    lr_scheduled = group['lr'] * schedule_fct(state['step']/group['t_total'], group['warmup'])
+                    lr_scheduled = group['lr'] * schedule_fct(state['step'] / group['t_total'], group['warmup'])
                 else:
                     lr_scheduled = group['lr']
                 lr.append(lr_scheduled)
@@ -377,7 +389,7 @@ class BertAdam(Optimizer):
 
                 if group['t_total'] != -1:
                     schedule_fct = SCHEDULES[group['schedule']]
-                    lr_scheduled = group['lr'] * schedule_fct(state['step']/group['t_total'], group['warmup'])
+                    lr_scheduled = group['lr'] * schedule_fct(state['step'] / group['t_total'], group['warmup'])
                 else:
                     lr_scheduled = group['lr']
 
@@ -392,4 +404,3 @@ class BertAdam(Optimizer):
                 # bias_correction2 = 1 - beta2 ** state['step']
 
         return loss
-

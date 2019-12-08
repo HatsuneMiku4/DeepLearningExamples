@@ -35,14 +35,15 @@ from modeling import BertForMultipleChoice, BertConfig, WEIGHTS_NAME, CONFIG_NAM
 from optimization import BertAdam, warmup_linear
 from tokenization import BertTokenizer
 
-logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt = '%m/%d/%Y %H:%M:%S',
-                    level = logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class SwagExample(object):
     """A single training/test example for the SWAG dataset."""
+
     def __init__(self,
                  swag_id,
                  context_sentence,
@@ -51,7 +52,7 @@ class SwagExample(object):
                  ending_1,
                  ending_2,
                  ending_3,
-                 label = None):
+                 label=None):
         self.swag_id = swag_id
         self.context_sentence = context_sentence
         self.start_ending = start_ending
@@ -89,7 +90,7 @@ class InputFeatures(object):
                  choices_features,
                  label
 
-    ):
+                 ):
         self.example_id = example_id
         self.choices_features = [
             {
@@ -118,23 +119,23 @@ def read_swag_examples(input_file, is_training):
 
     examples = [
         SwagExample(
-            swag_id = line[2],
-            context_sentence = line[4],
-            start_ending = line[5], # in the swag dataset, the
-                                         # common beginning of each
-                                         # choice is stored in "sent2".
-            ending_0 = line[7],
-            ending_1 = line[8],
-            ending_2 = line[9],
-            ending_3 = line[10],
-            label = int(line[11]) if is_training else None
-        ) for line in lines[1:] # we skip the line with the column names
+            swag_id=line[2],
+            context_sentence=line[4],
+            start_ending=line[5],  # in the swag dataset, the
+            # common beginning of each
+            # choice is stored in "sent2".
+            ending_0=line[7],
+            ending_1=line[8],
+            ending_2=line[9],
+            ending_3=line[10],
+            label=int(line[11]) if is_training else None
+        ) for line in lines[1:]  # we skip the line with the column names
     ]
 
     return examples
 
-def convert_examples_to_features(examples, tokenizer, max_seq_length,
-                                 is_training):
+
+def convert_examples_to_features(examples, tokenizer, max_seq_length, is_training):
     """Loads a data file into a list of `InputBatch`s."""
 
     # Swag is a multiple choice task. To perform this task using Bert,
@@ -203,13 +204,14 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
 
         features.append(
             InputFeatures(
-                example_id = example.swag_id,
-                choices_features = choices_features,
-                label = label
+                example_id=example.swag_id,
+                choices_features=choices_features,
+                label=label
             )
         )
 
     return features
+
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
     """Truncates a sequence pair in place to the maximum length."""
@@ -227,9 +229,11 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
         else:
             tokens_b.pop()
 
+
 def accuracy(out, labels):
     outputs = np.argmax(out, axis=1)
     return np.sum(outputs == labels)
+
 
 def select_field(features, field):
     return [
@@ -239,6 +243,7 @@ def select_field(features, field):
         ]
         for feature in features
     ]
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -251,8 +256,8 @@ def main():
                         help="The input data dir. Should contain the .csv files (or other data files) for the task.")
     parser.add_argument("--bert_model", default=None, type=str, required=True,
                         help="Bert pre-trained model selected in the list: bert-base-uncased, "
-                        "bert-large-uncased, bert-base-cased, bert-large-cased, bert-base-multilingual-uncased, "
-                        "bert-base-multilingual-cased, bert-base-chinese.")
+                             "bert-large-uncased, bert-base-cased, bert-large-cased, bert-base-multilingual-uncased, "
+                             "bert-base-multilingual-cased, bert-base-chinese.")
     parser.add_argument("--output_dir",
                         default=None,
                         type=str,
@@ -343,7 +348,7 @@ def main():
 
     if args.gradient_accumulation_steps < 1:
         raise ValueError("Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(
-                            args.gradient_accumulation_steps))
+            args.gradient_accumulation_steps))
 
     args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
 
@@ -366,7 +371,7 @@ def main():
     train_examples = None
     num_train_optimization_steps = None
     if args.do_train:
-        train_examples = read_swag_examples(os.path.join(args.data_dir, 'train.csv'), is_training = True)
+        train_examples = read_swag_examples(os.path.join(args.data_dir, 'train.csv'), is_training=True)
         num_train_optimization_steps = int(
             len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
         if args.local_rank != -1:
@@ -374,8 +379,9 @@ def main():
 
     # Prepare model
     model = BertForMultipleChoice.from_pretrained(args.bert_model,
-        cache_dir=os.path.join(PYTORCH_PRETRAINED_BERT_CACHE, 'distributed_{}'.format(args.local_rank)),
-        num_choices=4)
+                                                  cache_dir=os.path.join(PYTORCH_PRETRAINED_BERT_CACHE,
+                                                                         'distributed_{}'.format(args.local_rank)),
+                                                  num_choices=4)
     model.load_state_dict(torch.load(args.init_checkpoint, map_location='cpu'), strict=False)
 
     if args.fp16:
@@ -385,7 +391,8 @@ def main():
         try:
             from apex.parallel import DistributedDataParallel as DDP
         except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
+            raise ImportError(
+                "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
 
         model = DDP(model)
     elif n_gpu > 1:
@@ -402,13 +409,14 @@ def main():
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
+    ]
     if args.fp16:
         try:
             from apex.optimizers import FP16_Optimizer
             from apex.optimizers import FusedAdam
         except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
+            raise ImportError(
+                "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
 
         optimizer = FusedAdam(optimizer_grouped_parameters,
                               lr=args.learning_rate,
@@ -456,7 +464,7 @@ def main():
                 input_ids, input_mask, segment_ids, label_ids = batch
                 loss = model(input_ids, segment_ids, input_mask, label_ids)
                 if n_gpu > 1:
-                    loss = loss.mean() # mean() to average on multi-gpu.
+                    loss = loss.mean()  # mean() to average on multi-gpu.
                 if args.fp16 and args.loss_scale != 1.0:
                     # rescale loss for fp16 training
                     # see https://docs.nvidia.com/deeplearning/sdk/mixed-precision-training/index.html
@@ -475,13 +483,13 @@ def main():
                     if args.fp16:
                         # modify learning rate with special warm up BERT uses
                         # if args.fp16 is False, BertAdam is used that handles this automatically
-                        lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
+                        lr_this_step = args.learning_rate * warmup_linear(global_step / num_train_optimization_steps,
+                                                                          args.warmup_proportion)
                         for param_group in optimizer.param_groups:
                             param_group['lr'] = lr_this_step
                     optimizer.step()
                     optimizer.zero_grad()
                     global_step += 1
-
 
     if args.do_train:
         # Save a trained model and the associated configuration
@@ -495,15 +503,15 @@ def main():
         # Load a trained model and config that you have fine-tuned
         config = BertConfig(output_config_file)
         model = BertForMultipleChoice(config, num_choices=4)
+        # noinspection PyUnresolvedReferences
         model.load_state_dict(torch.load(output_model_file))
     else:
         model = BertForMultipleChoice.from_pretrained(args.bert_model, num_choices=4)
         model.load_state_dict(torch.load(args.init_checkpoint, map_location='cpu'), strict=False)
     model.to(device)
 
-
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        eval_examples = read_swag_examples(os.path.join(args.data_dir, 'val.csv'), is_training = True)
+        eval_examples = read_swag_examples(os.path.join(args.data_dir, 'val.csv'), is_training=True)
         eval_features = convert_examples_to_features(
             eval_examples, tokenizer, args.max_seq_length, True)
         logger.info("***** Running evaluation *****")
@@ -544,10 +552,11 @@ def main():
         eval_loss = eval_loss / nb_eval_steps
         eval_accuracy = eval_accuracy / nb_eval_examples
 
+        # noinspection PyUnboundLocalVariable
         result = {'eval_loss': eval_loss,
                   'eval_accuracy': eval_accuracy,
                   'global_step': global_step,
-                  'loss': tr_loss/nb_tr_steps}
+                  'loss': tr_loss / nb_tr_steps}
 
         output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
