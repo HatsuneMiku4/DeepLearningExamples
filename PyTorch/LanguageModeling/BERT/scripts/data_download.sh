@@ -16,7 +16,7 @@
 DATA_DIR=${1:-/workspace/bert/data}
 
 # Download vocab files from pretrained model
-cd vocab && python3 download_models.py && rm *.zip && rm ./*/*.ckpt.*
+#cd vocab && python3 download_models.py && rm *.zip && rm ./*/*.ckpt.*
 
 # Download SQUAD
 cd $DATA_DIR/squad && . squad_download.sh

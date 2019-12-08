@@ -13,6 +13,7 @@
 
 import os
 
+
 class NVIDIAPretrainedWeightDownloader:
     def __init__(self, save_path):
         self.save_path = save_path + '/nvidia_pretrained_weights'

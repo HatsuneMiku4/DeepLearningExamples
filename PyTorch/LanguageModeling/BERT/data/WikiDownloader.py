@@ -11,11 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import bz2
 import os
 import urllib.request
 import subprocess
-import sys
+
 
 class WikiDownloader:
     def __init__(self, language, save_path):
@@ -26,15 +25,14 @@ class WikiDownloader:
 
         self.language = language
         self.download_urls = {
-            'en' : 'https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2',
-            'zh' : 'https://dumps.wikimedia.org/zhwiki/latest/zhwiki-latest-pages-articles.xml.bz2'
+            'en': 'https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2',
+            'zh': 'https://dumps.wikimedia.org/zhwiki/latest/zhwiki-latest-pages-articles.xml.bz2'
         }
 
         self.output_files = {
-            'en' : 'wikicorpus_en.xml.bz2',
-            'zh' : 'wikicorpus_zh.xml.bz2'
+            'en': 'wikicorpus_en.xml.bz2',
+            'zh': 'wikicorpus_zh.xml.bz2'
         }
-
 
     def download(self):
         if self.language in self.download_urls:

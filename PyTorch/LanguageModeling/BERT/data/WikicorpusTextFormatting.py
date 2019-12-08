@@ -12,14 +12,13 @@
 # limitations under the License.
 
 import glob
-import os
+
 
 class WikicorpusTextFormatting:
-    def __init__(self, wiki_path, output_filename, recursive = False):
+    def __init__(self, wiki_path, output_filename, recursive=False):
         self.wiki_path = wiki_path
         self.recursive = recursive
         self.output_filename = output_filename
-
 
     # This puts one article per line
     def merge(self):

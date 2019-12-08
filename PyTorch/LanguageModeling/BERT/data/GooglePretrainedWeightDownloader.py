@@ -16,6 +16,7 @@ import os
 import urllib.request
 import zipfile
 
+
 class GooglePretrainedWeightDownloader:
     def __init__(self, save_path):
         self.save_path = save_path + '/google_pretrained_weights'
@@ -25,13 +26,20 @@ class GooglePretrainedWeightDownloader:
 
         # Download urls
         self.model_urls = {
-            'bert_base_uncased': ('https://storage.googleapis.com/bert_models/2018_10_18/uncased_L-12_H-768_A-12.zip', 'uncased_L-12_H-768_A-12.zip'),
-            'bert_large_uncased': ('https://storage.googleapis.com/bert_models/2018_10_18/uncased_L-24_H-1024_A-16.zip', 'uncased_L-24_H-1024_A-16.zip'),
-            'bert_base_cased': ('https://storage.googleapis.com/bert_models/2018_10_18/cased_L-12_H-768_A-12.zip', 'cased_L-12_H-768_A-12.zip'),
-            'bert_large_cased': ('https://storage.googleapis.com/bert_models/2018_10_18/cased_L-24_H-1024_A-16.zip', 'cased_L-24_H-1024_A-16.zip'),
-            'bert_base_multilingual_cased': ('https://storage.googleapis.com/bert_models/2018_11_23/multi_cased_L-12_H-768_A-12.zip', 'multi_cased_L-12_H-768_A-12.zip'),
-            'bert_large_multilingual_uncased': ('https://storage.googleapis.com/bert_models/2018_11_03/multilingual_L-12_H-768_A-12.zip', 'multilingual_L-12_H-768_A-12.zip'),
-            'bert_base_chinese': ('https://storage.googleapis.com/bert_models/2018_11_03/chinese_L-12_H-768_A-12.zip', 'chinese_L-12_H-768_A-12.zip')
+            'bert_base_uncased': ('https://storage.googleapis.com/bert_models/2018_10_18/uncased_L-12_H-768_A-12.zip',
+                                  'uncased_L-12_H-768_A-12.zip'),
+            'bert_large_uncased': ('https://storage.googleapis.com/bert_models/2018_10_18/uncased_L-24_H-1024_A-16.zip',
+                                   'uncased_L-24_H-1024_A-16.zip'),
+            'bert_base_cased': ('https://storage.googleapis.com/bert_models/2018_10_18/cased_L-12_H-768_A-12.zip',
+                                'cased_L-12_H-768_A-12.zip'),
+            'bert_large_cased': ('https://storage.googleapis.com/bert_models/2018_10_18/cased_L-24_H-1024_A-16.zip',
+                                 'cased_L-24_H-1024_A-16.zip'),
+            'bert_base_multilingual_cased': ('https://storage.googleapis.com/bert_models/2018_11_23/multi_cased_L-12_H-768_A-12.zip',
+                                             'multi_cased_L-12_H-768_A-12.zip'),
+            'bert_large_multilingual_uncased': ('https://storage.googleapis.com/bert_models/2018_11_03/multilingual_L-12_H-768_A-12.zip',
+                                                'multilingual_L-12_H-768_A-12.zip'),
+            'bert_base_chinese': ('https://storage.googleapis.com/bert_models/2018_11_03/chinese_L-12_H-768_A-12.zip',
+                                  'chinese_L-12_H-768_A-12.zip')
         }
 
         # SHA256sum verification for file download integrity (and checking for changes from the download source over time)
@@ -104,43 +112,43 @@ class GooglePretrainedWeightDownloader:
 
     # Helper to get sha256sum of a file
     def sha256sum(self, filename):
-      h  = hashlib.sha256()
-      b  = bytearray(128*1024)
-      mv = memoryview(b)
-      with open(filename, 'rb', buffering=0) as f:
-        for n in iter(lambda : f.readinto(mv), 0):
-          h.update(mv[:n])
+        h = hashlib.sha256()
+        b = bytearray(128 * 1024)
+        mv = memoryview(b)
+        with open(filename, 'rb', buffering=0) as f:
+            for n in iter(lambda: f.readinto(mv), 0):
+                h.update(mv[:n])
 
-      return h.hexdigest()
+        return h.hexdigest()
 
     def download(self):
         # Iterate over urls: download, unzip, verify sha256sum
         found_mismatch_sha = False
         for model in self.model_urls:
-          url = self.model_urls[model][0]
-          file = self.save_path + '/' + self.model_urls[model][1]
+            url = self.model_urls[model][0]
+            file = self.save_path + '/' + self.model_urls[model][1]
 
-          print('Downloading', url)
-          response = urllib.request.urlopen(url)
-          with open(file, 'wb') as handle:
-            handle.write(response.read())
+            print('Downloading', url)
+            response = urllib.request.urlopen(url)
+            with open(file, 'wb') as handle:
+                handle.write(response.read())
 
-          print('Unzipping', file)
-          zip = zipfile.ZipFile(file, 'r')
-          zip.extractall(self.save_path)
-          zip.close()
+            print('Unzipping', file)
+            zip = zipfile.ZipFile(file, 'r')
+            zip.extractall(self.save_path)
+            zip.close()
 
-          sha_dict = self.model_sha[model]
-          for extracted_file in sha_dict:
-            sha = sha_dict[extracted_file]
-            if sha != self.sha256sum(file[:-4] + '/' + extracted_file):
-              found_mismatch_sha = True
-              print('SHA256sum does not match on file:', extracted_file, 'from download url:', url)
-            else:
-              print(file[:-4] + '/' + extracted_file, '\t', 'verified')
+            sha_dict = self.model_sha[model]
+            for extracted_file in sha_dict:
+                sha = sha_dict[extracted_file]
+                if sha != self.sha256sum(file[:-4] + '/' + extracted_file):
+                    found_mismatch_sha = True
+                    print('SHA256sum does not match on file:', extracted_file, 'from download url:', url)
+                else:
+                    print(file[:-4] + '/' + extracted_file, '\t', 'verified')
 
         if not found_mismatch_sha:
-          print("All downloads pass sha256sum verification.")
+            print("All downloads pass sha256sum verification.")
 
     def serialize(self):
         pass
@@ -155,4 +163,3 @@ class GooglePretrainedWeightDownloader:
 
     def listLocallyStoredWeights(self):
         pass
-

@@ -11,10 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import bz2
 import os
 import urllib.request
-import sys
+
 
 class MRPCDownloader:
     def __init__(self, save_path):
@@ -25,7 +24,7 @@ class MRPCDownloader:
 
         # Documentation - Download link obtained from here: https://github.com/nyu-mll/GLUE-baselines/blob/master/download_glue_data.py
         self.download_urls = {
-            'https://firebasestorage.googleapis.com/v0/b/mtl-sentence-representations.appspot.com/o/data%2Fmrpc_dev_ids.tsv?alt=media&token=ec5c0836-31d5-48f4-b431-7480817f1adc' : 'mrpc_dev_ids.tsv'
+            'https://firebasestorage.googleapis.com/v0/b/mtl-sentence-representations.appspot.com/o/data%2Fmrpc_dev_ids.tsv?alt=media&token=ec5c0836-31d5-48f4-b431-7480817f1adc': 'mrpc_dev_ids.tsv'
         }
 
     def download(self):

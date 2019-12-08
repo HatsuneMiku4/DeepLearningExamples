@@ -17,6 +17,7 @@ from itertools import islice
 import multiprocessing
 import statistics
 
+
 class Sharding:
     def __init__(self, input_files, output_name_prefix, n_training_shards, n_test_shards, fraction_test_set):
         assert len(input_files) > 0, 'The input file list must contain at least one file.'
@@ -34,13 +35,12 @@ class Sharding:
         self.output_test_identifier = '_test'
         self.output_file_extension = '.txt'
 
-        self.articles = {}    # key: integer identifier, value: list of articles
-        self.sentences = {}    # key: integer identifier, value: list of sentences
-        self.output_training_files = {}    # key: filename, value: list of articles to go into file
+        self.articles = {}  # key: integer identifier, value: list of articles
+        self.sentences = {}  # key: integer identifier, value: list of sentences
+        self.output_training_files = {}  # key: filename, value: list of articles to go into file
         self.output_test_files = {}  # key: filename, value: list of articles to go into file
 
         self.init_output_files()
-
 
     # Remember, the input files contain one article per line (the whitespace check is to skip extraneous blank lines)
     def load_articles(self):
@@ -56,7 +56,6 @@ class Sharding:
                         global_article_count += 1
 
         print('End: Loading Articles: There are', len(self.articles), 'articles.')
-
 
     def segment_articles_into_sentences(self, segmenter):
         print('Start: Sentence Segmentation')
@@ -77,7 +76,7 @@ class Sharding:
             manager = multiprocessing.Manager()
             return_dict = manager.dict()
             jobs = []
-            n_processes = 7    # in addition to the main process, total = n_proc+1
+            n_processes = 7  # in addition to the main process, total = n_proc+1
 
             def work(articles, return_dict):
                 sentences = {}
@@ -109,7 +108,7 @@ class Sharding:
             for item in chunks(self.articles, len(self.articles)):
                 pass
 
-        else:    # serial option
+        else:  # serial option
             for i, article in enumerate(self.articles):
                 self.sentences[i] = segmenter.segment_string(self.articles[article])
 
@@ -118,11 +117,12 @@ class Sharding:
 
         print('End: Sentence Segmentation')
 
-
     def init_output_files(self):
         print('Start: Init Output Files')
-        assert len(self.output_training_files) is 0, 'Internal storage self.output_files already contains data. This function is intended to be used by the constructor only.'
-        assert len(self.output_test_files) is 0, 'Internal storage self.output_files already contains data. This function is intended to be used by the constructor only.'
+        assert len(
+            self.output_training_files) is 0, 'Internal storage self.output_files already contains data. This function is intended to be used by the constructor only.'
+        assert len(
+            self.output_test_files) is 0, 'Internal storage self.output_files already contains data. This function is intended to be used by the constructor only.'
 
         for i in range(self.n_training_shards):
             name = self.output_name_prefix + self.output_training_identifier + '_' + str(i) + self.output_file_extension
@@ -134,7 +134,6 @@ class Sharding:
 
         print('End: Init Output Files')
 
-
     def get_sentences_per_shard(self, shard):
         result = 0
         for article_id in shard:
@@ -142,10 +141,10 @@ class Sharding:
 
         return result
 
-
     def distribute_articles_over_shards(self):
         print('Start: Distribute Articles Over Shards')
-        assert len(self.articles) >= self.n_training_shards + self.n_test_shards, 'There are fewer articles than shards. Please add more data or reduce the number of shards requested.'
+        assert len(
+            self.articles) >= self.n_training_shards + self.n_test_shards, 'There are fewer articles than shards. Please add more data or reduce the number of shards requested.'
 
         # Create dictionary with - key: sentence count per article, value: article id number
         sentence_counts = defaultdict(lambda: [])
@@ -180,7 +179,8 @@ class Sharding:
 
             if len(self.sentences[current_article_id]) > nominal_sentences_per_training_shard:
                 nominal_sentences_per_training_shard = len(self.sentences[current_article_id])
-                print('Warning: A single article contains more than the nominal number of sentences per training shard.')
+                print(
+                    'Warning: A single article contains more than the nominal number of sentences per training shard.')
 
         for file in self.output_test_files:
             current_article_id = sentence_counts[max_sentences][-1]
@@ -215,7 +215,8 @@ class Sharding:
 
         while len(consumed_article_set) < len(self.articles):
             for fidx, file in enumerate(self.output_training_files):
-                nominal_next_article_size = min(nominal_sentences_per_training_shard - training_counts[fidx], max_sentences)
+                nominal_next_article_size = min(nominal_sentences_per_training_shard - training_counts[fidx],
+                                                max_sentences)
 
                 # Maintain the max sentence count
                 while len(sentence_counts[max_sentences]) == 0 and max_sentences > 0:
@@ -224,8 +225,9 @@ class Sharding:
                 while len(sentence_counts[nominal_next_article_size]) == 0 and nominal_next_article_size > 0:
                     nominal_next_article_size -= 1
 
-                if nominal_next_article_size not in sentence_counts or nominal_next_article_size is 0 or training_counts[fidx] > training_median:
-                    continue    # skip adding to this file, will come back later if no file can accept unused articles
+                if nominal_next_article_size not in sentence_counts or nominal_next_article_size is 0 or \
+                        training_counts[fidx] > training_median:
+                    continue  # skip adding to this file, will come back later if no file can accept unused articles
 
                 current_article_id = sentence_counts[nominal_next_article_size][-1]
                 sentence_counts[nominal_next_article_size].pop(-1)
@@ -244,8 +246,9 @@ class Sharding:
                 while len(sentence_counts[nominal_next_article_size]) == 0 and nominal_next_article_size > 0:
                     nominal_next_article_size -= 1
 
-                if nominal_next_article_size not in sentence_counts or nominal_next_article_size is 0 or test_counts[fidx] > test_median:
-                    continue    # skip adding to this file, will come back later if no file can accept unused articles
+                if nominal_next_article_size not in sentence_counts or nominal_next_article_size is 0 or test_counts[
+                    fidx] > test_median:
+                    continue  # skip adding to this file, will come back later if no file can accept unused articles
 
                 current_article_id = sentence_counts[nominal_next_article_size][-1]
                 sentence_counts[nominal_next_article_size].pop(-1)
@@ -261,7 +264,7 @@ class Sharding:
 
             history_same = True
             for i in range(1, len(history_remaining)):
-                history_same = history_same and (history_remaining[i-1] == history_remaining[i])
+                history_same = history_same and (history_remaining[i - 1] == history_remaining[i])
 
             if history_same:
                 nominal_sentences_per_training_shard += 1
@@ -280,10 +283,8 @@ class Sharding:
 
             print('Distributing data over shards:', len(unused_article_set), 'articles remaining.')
 
-
         if len(unused_article_set) != 0:
             print('Warning: Some articles did not make it into output files.')
-
 
         for shard in self.output_training_files:
             print('Training shard:', self.get_sentences_per_shard(self.output_training_files[shard]))
@@ -292,7 +293,6 @@ class Sharding:
             print('Test shard:', self.get_sentences_per_shard(self.output_test_files[shard]))
 
         print('End: Distribute Articles Over Shards')
-
 
     def write_shards_to_disk(self):
         print('Start: Write Shards to Disk')
@@ -303,7 +303,6 @@ class Sharding:
             self.write_single_shard(shard, self.output_test_files[shard])
 
         print('End: Write Shards to Disk')
-
 
     def write_single_shard(self, shard_name, shard):
         with open(shard_name, mode='w', newline='\n') as f:
@@ -318,10 +317,10 @@ import nltk
 
 nltk.download('punkt')
 
+
 class NLTKSegmenter:
     def __init(self):
         pass
 
     def segment_string(self, article):
         return nltk.tokenize.sent_tokenize(article)
-
