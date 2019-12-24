@@ -101,7 +101,7 @@ fi
 
 echo $DATA_DIR
 INPUT_DIR=$DATA_DIR
-CMD=" /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/run_pretraining.py"
+CMD=" /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/run_pretraining_admm.py"
 CMD+=" --input_dir=$DATA_DIR"
 CMD+=" --output_dir=$CHECKPOINTS_DIR"
 CMD+=" --config_file=$BERT_CONFIG"
@@ -194,7 +194,7 @@ fi
 
 echo $DATA_DIR
 INPUT_DIR=$DATA_DIR
-CMD=" /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/run_pretraining.py"
+CMD=" /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/run_pretraining_admm.py"
 CMD+=" --input_dir=$DATA_DIR"
 CMD+=" --output_dir=$CHECKPOINTS_DIR"
 CMD+=" --config_file=$BERT_CONFIG"

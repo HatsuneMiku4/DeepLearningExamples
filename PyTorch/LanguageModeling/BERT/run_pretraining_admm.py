@@ -47,6 +47,8 @@ from apex.amp import _amp_state
 
 from concurrent.futures import ProcessPoolExecutor
 
+import sys
+sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm
 
 
@@ -748,7 +750,8 @@ def main():
 
 
 if __name__ == "__main__":
-    now = time.time()
-    args = main()
-    if is_main_process():
-        print("Total time taken {}".format(time.time() - now))
+    print(parse_arguments())
+    # now = time.time()
+    # main()
+    # if is_main_process():
+    #     print("Total time taken {}".format(time.time() - now))
