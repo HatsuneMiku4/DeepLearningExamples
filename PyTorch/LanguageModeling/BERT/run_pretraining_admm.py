@@ -750,8 +750,7 @@ def main():
 
 
 if __name__ == "__main__":
-    print(parse_arguments())
-    # now = time.time()
-    # main()
-    # if is_main_process():
-    #     print("Total time taken {}".format(time.time() - now))
+    now = time.time()
+    main()
+    if is_main_process():
+        print("Total time taken {}".format(time.time() - now))
