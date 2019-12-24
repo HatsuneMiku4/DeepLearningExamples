@@ -1,0 +1,20 @@
+class: ProximalBertPruningManager
+config_file: None
+init_weights_path: None
+
+initial_rho: 0.0001
+rho_num: 1
+proximal_lambda: 1
+update_freq: 100
+lr: None
+admm_steps: 3000
+retrain_steps: 3000
+
+sparsity_type: threshold
+arch: bert_base_uncased
+optimizer_type: NVLAMB
+dataset_type: EnwikiBookcorpus
+save_dir: None
+overwrite: False
+admm_ckpt_steps: 500
+retrain_ckpt_steps: 500
