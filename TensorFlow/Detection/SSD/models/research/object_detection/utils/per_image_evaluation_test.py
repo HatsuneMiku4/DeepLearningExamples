@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tests for object_detection.utils.per_image_evaluation."""
+"""Tests for object_detection.admm_utils.per_image_evaluation."""
 
 import numpy as np
 import tensorflow as tf

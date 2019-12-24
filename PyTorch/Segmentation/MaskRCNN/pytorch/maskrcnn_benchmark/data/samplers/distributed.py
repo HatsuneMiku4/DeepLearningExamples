@@ -1,5 +1,5 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-# Code is copy-pasted exactly as in torch.utils.data.distributed.
+# Code is copy-pasted exactly as in torch.admm_utils.data.distributed.
 # FIXME remove this once c10d fixes the bug it has
 import math
 import torch

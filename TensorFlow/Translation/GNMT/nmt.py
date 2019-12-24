@@ -42,10 +42,10 @@ import time
 import tensorflow as tf
 
 import estimator
-from utils import evaluation_utils
-from utils import iterator_utils
-from utils import misc_utils as utils
-from utils import vocab_utils
+from admm_utils import evaluation_utils
+from admm_utils import iterator_utils
+from admm_utils import misc_utils as utils
+from admm_utils import vocab_utils
 from variable_mgr import constants
 
 utils.check_tensorflow_version()

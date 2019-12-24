@@ -22,7 +22,7 @@ import re
 
 import tensorflow as tf
 
-from utils import misc_utils
+from admm_utils import misc_utils
 from variable_mgr import allreduce
 from variable_mgr import batch_allreduce
 from variable_mgr import variable_mgr_util

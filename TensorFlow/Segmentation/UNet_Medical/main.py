@@ -35,11 +35,11 @@ from PIL import Image
 
 from dllogger import tags
 from dllogger.logger import LOGGER
-from utils.cmd_util import PARSER, _cmd_params
-from utils.data_loader import Dataset
-from utils.hooks.profiling_hook import ProfilingHook
-from utils.hooks.training_hook import TrainingHook
-from utils.model_fn import unet_fn
+from admm_utils.cmd_util import PARSER, _cmd_params
+from admm_utils.data_loader import Dataset
+from admm_utils.hooks.profiling_hook import ProfilingHook
+from admm_utils.hooks.training_hook import TrainingHook
+from admm_utils.model_fn import unet_fn
 
 
 def main(_):

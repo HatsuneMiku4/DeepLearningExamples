@@ -31,7 +31,7 @@ def collate(samples, pad_idx, eos_idx):
 
 
 class MonolingualDataset(FairseqDataset):
-    """A wrapper around torch.utils.data.Dataset for monolingual data."""
+    """A wrapper around torch.admm_utils.data.Dataset for monolingual data."""
 
     def __init__(self, dataset, sizes, vocab, shuffle):
         self.dataset = dataset

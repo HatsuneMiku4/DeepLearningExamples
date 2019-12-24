@@ -47,6 +47,142 @@ from apex.amp import _amp_state
 
 from concurrent.futures import ProcessPoolExecutor
 
+from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm
+
+
+global_step = 0
+average_loss = 0.0
+training_steps = 0
+overflow_buf = None
+most_recent_ckpts_paths = None
+device = None
+files = None
+args = None
+
+
+class ProximalBertPruningManager(ProximalADMMPruningManager):
+    ATTRIBUTES = {
+        'config_file': None,
+        'init_weights_path': None,
+
+        'initial_rho': 0.0001,
+        'rho_num': 1,
+        'proximal_lambda': 1,
+        'update_freq': 100,  # steps
+        'lr': None,
+        'admm_steps': 3000,
+        'retrain_steps': 3000,
+
+        'sparsity_type': 'threshold',
+        'arch': 'bert_base_uncased',
+        'optimizer_type': 'NVLAMB',
+        'dataset_type': 'EnwikiBookcorpus',
+        'save_dir': None,
+        'overwrite': False,
+        'admm_ckpt_steps': 500,
+        'retrain_ckpt_steps': 500,
+    }
+
+    # noinspection PyMethodOverriding
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    # noinspection PyMethodOverriding
+    def setup_learner(self, model, optimizer, train_loader):
+        self.model = model
+        self.optimizer = optimizer
+        self.train_loader = train_loader
+
+    def update_lr(self, step):
+        if self.cur_phase == PruningPhase.admm:
+            new_lr = admm.admm_adjust_learning_rate_per_step(
+                step, args=argparse.Namespace(
+                    lr=self.lr, admm_update_freq=self.update_freq,
+                )
+            )
+            self.optimizer.set_lr(new_lr)
+        else: pass
+
+    # noinspection PyMethodOverriding
+    def append_admm_loss(self, loss, step):
+        assert self.cur_phase == PruningPhase.admm
+        args = argparse.Namespace(
+            admm=True, verbose=False,
+            admm_update_freq=self.update_freq,
+            lamda=self.proximal_lambda,
+            sparsity_type=self.sparsity_type,
+        )
+        admm.proximal_update_per_step(args, self.admm, self.model, step, writer=None)
+        admm.admm_update_per_step(args, self.admm, self.model, step)
+        losses = admm.append_admm_loss(args, self.admm, self.model, loss)
+        loss, admm_loss, mixed_loss = losses
+        return mixed_loss
+
+    def _train_masked_retrain(self):
+        self.setup_masking_hooks()
+        for step in range(self.retrain_steps):
+            self._train_one_step(step)
+            if step % self.retrain_ckpt_steps == 0:
+                self.save_checkpoint_retrain(self.model, step=step)
+        self.save_checkpoint_retrain(self.model, step=self.retrain_steps)
+        self.remove_masking_hooks()
+
+    def _train_admm_prune(self, current_rho):
+        for step in range(self.admm_steps):
+            self._train_one_step(step)
+            if step % self.admm_ckpt_steps == 0:
+                self.save_checkpoint_prune(self.model, rho=current_rho, step=step)
+        self.save_checkpoint_prune(self.model, rho=current_rho)
+
+    def _train_one_step(self, my_step):
+        global args, average_loss, global_step, training_steps, device, overflow_buf, most_recent_ckpts_paths, files
+        epoch, f_id, step, batch = next(self.train_loader)
+
+        batch = [t.to(device) for t in batch]
+        input_ids, segment_ids, input_mask, masked_lm_labels, next_sentence_labels = batch
+        loss = self.model(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_mask,
+                          masked_lm_labels=masked_lm_labels, next_sentence_label=next_sentence_labels,
+                          checkpoint_activations=args.checkpoint_activations)
+        if args.n_gpu > 1:
+            loss = loss.mean()  # mean() to average on multi-gpu.
+
+        if self.cur_phase == PruningPhase.admm:
+            loss = self.append_admm_loss(loss, my_step)
+
+        divisor = args.gradient_accumulation_steps
+        if args.gradient_accumulation_steps > 1:
+            if not args.allreduce_post_accumulation:
+                # this division was merged into predivision
+                loss = loss / args.gradient_accumulation_steps
+                divisor = 1.0
+        if args.fp16:
+            with amp.scale_loss(loss, self.optimizer,
+                                delay_overflow_check=args.allreduce_post_accumulation) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
+        average_loss += loss.item()
+
+        self.update_lr(my_step)
+        if training_steps % args.gradient_accumulation_steps == 0:
+            global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
+
+        if global_step >= args.max_steps:
+            print_final_loss(training_steps, average_loss, divisor)
+
+        elif training_steps % (args.log_freq * args.gradient_accumulation_steps) == 0:
+            if is_main_process():
+                print("Step:{} Average Loss = {} Step Loss = {} LR {}".format(
+                    global_step, average_loss / (args.log_freq * divisor),
+                    loss.item() * args.gradient_accumulation_steps / divisor,
+                    self.optimizer.param_groups[0]['lr']))
+            average_loss = 0
+
+        if global_step >= args.max_steps or training_steps % (
+                args.num_steps_per_checkpoint * args.gradient_accumulation_steps) == 0:
+            save_checkpoint(self.model, self.optimizer, global_step, files, f_id, most_recent_ckpts_paths)
+
+
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
@@ -220,6 +356,10 @@ def parse_arguments():
 
 
 def setup_training(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
     assert (torch.cuda.is_available())
 
     if args.local_rank == -1:
@@ -327,7 +467,7 @@ def prepare_model_and_optimizer(args, device):
                 checkpoint['optimizer']['param_groups'][iter_]['lr'] = args.learning_rate
         optimizer.load_state_dict(checkpoint['optimizer'])  # , strict=False)
 
-        # Restore AMP master parameters          
+        # Restore AMP master parameters
         if args.fp16:
             optimizer._lazy_init_maybe_master_weights()
             optimizer._amp_stash.lazy_init_called = True
@@ -404,19 +544,187 @@ def take_optimizer_step(args, optimizer, model, overflow_buf, global_step):
     return global_step
 
 
-def main():
-    args = parse_arguments()
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+def save_checkpoint(model, optimizer, global_step, files, f_id, most_recent_ckpts_paths):
+    if is_main_process():
+        # Save a trained model
+        logger.info("** ** * Saving fine - tuned model ** ** * ")
+        model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
+        if args.resume_step < 0 or not args.phase2:
+            output_save_file = os.path.join(args.output_dir, "ckpt_{}.pt".format(global_step))
+        else:
+            output_save_file = os.path.join(args.output_dir, "ckpt_{}.pt".format(global_step + args.phase1_end_step))
+        if args.do_train:
+            torch.save({'model': model_to_save.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'master params': list(amp.master_params(optimizer)),
+                        'files': [f_id] + files}, output_save_file)
 
+            most_recent_ckpts_paths.append(output_save_file)
+            if len(most_recent_ckpts_paths) > 3:
+                ckpt_to_be_removed = most_recent_ckpts_paths.pop(0)
+                os.remove(ckpt_to_be_removed)
+
+
+def print_final_loss(training_steps, average_loss, divisor):
+    last_num_steps = int(training_steps / args.gradient_accumulation_steps) % args.log_freq
+    last_num_steps = args.log_freq if last_num_steps == 0 else last_num_steps
+    average_loss = torch.tensor(average_loss, dtype=torch.float32).cuda()
+    average_loss = average_loss / (last_num_steps * divisor)
+    if torch.distributed.is_initialized():
+        average_loss /= torch.distributed.get_world_size()
+        torch.distributed.all_reduce(average_loss)
+    if is_main_process():
+        logger.info("Total Steps:{} Final Loss = {}".format(
+            training_steps / args.gradient_accumulation_steps, average_loss.item()))
+
+
+def train_one_file(model, optimizer, train_dataloader, f_id):
+    global training_steps, global_step, average_loss, overflow_buf, most_recent_ckpts_paths, files, device
+
+    train_iter = tqdm(train_dataloader, desc="Iteration") if is_main_process() else train_dataloader
+    for step, batch in enumerate(train_iter):
+
+        training_steps += 1
+        batch = [t.to(device) for t in batch]
+        input_ids, segment_ids, input_mask, masked_lm_labels, next_sentence_labels = batch
+        loss = model(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_mask,
+                     masked_lm_labels=masked_lm_labels, next_sentence_label=next_sentence_labels,
+                     checkpoint_activations=args.checkpoint_activations)
+        if args.n_gpu > 1:
+            loss = loss.mean()  # mean() to average on multi-gpu.
+
+        divisor = args.gradient_accumulation_steps
+        if args.gradient_accumulation_steps > 1:
+            if not args.allreduce_post_accumulation:
+                # this division was merged into predivision
+                loss = loss / args.gradient_accumulation_steps
+                divisor = 1.0
+        if args.fp16:
+            with amp.scale_loss(loss, optimizer,
+                                delay_overflow_check=args.allreduce_post_accumulation) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
+        average_loss += loss.item()
+
+        if training_steps % args.gradient_accumulation_steps == 0:
+            global_step = take_optimizer_step(args, optimizer, model, overflow_buf, global_step)
+
+        if global_step >= args.max_steps:
+            print_final_loss(training_steps, average_loss, divisor)
+
+        elif training_steps % (args.log_freq * args.gradient_accumulation_steps) == 0:
+            if is_main_process():
+                print("Step:{} Average Loss = {} Step Loss = {} LR {}".format(
+                    global_step, average_loss / (args.log_freq * divisor),
+                    loss.item() * args.gradient_accumulation_steps / divisor,
+                    optimizer.param_groups[0]['lr']))
+            average_loss = 0
+
+        if global_step >= args.max_steps or training_steps % (
+                args.num_steps_per_checkpoint * args.gradient_accumulation_steps) == 0:
+            save_checkpoint(model, optimizer, global_step, files, f_id, most_recent_ckpts_paths)
+
+
+def setup_files(epoch, checkpoint):
+    if not args.resume_from_checkpoint or epoch > 0 or args.phase2:
+        files = [os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if
+                 os.path.isfile(os.path.join(args.input_dir, f)) and 'training' in f]
+        files.sort()
+        num_files = len(files)
+        random.shuffle(files)
+        f_start_id = 0
+    else:
+        f_start_id = checkpoint['files'][0]
+        files = checkpoint['files'][1:]
+        args.resume_from_checkpoint = False
+        num_files = len(files)
+
+    shared_file_list = {}
+
+    if torch.distributed.is_initialized() and torch.distributed.get_world_size() > num_files:
+        remainder = torch.distributed.get_world_size() % num_files
+        data_file = files[(f_start_id * torch.distributed.get_world_size() + torch.distributed.get_rank() + remainder * f_start_id) % num_files]
+    else:
+        remainder = None
+        data_file = files[(f_start_id * torch.distributed.get_world_size() + torch.distributed.get_rank()) % num_files]
+
+    previous_file = data_file
+    return f_start_id, files, num_files, data_file, previous_file, shared_file_list, remainder
+
+
+def prefetch_next_file(pool, f_id, files, num_files, previous_file, shared_file_list, remainder):
+    world_size = torch.distributed.get_world_size()
+    rank = torch.distributed.get_rank()
+    if torch.distributed.get_world_size() > num_files:
+        data_file = files[(f_id * world_size + rank + remainder * f_id) % num_files]
+    else:
+        data_file = files[(f_id * world_size + rank) % num_files]
+
+    logger.info("file no %s file %s" % (f_id, previous_file))
+    previous_file = data_file
+    dataset_future = pool.submit(
+        create_pretraining_dataset, data_file,
+        args.max_predictions_per_seq, shared_file_list, args
+    )
+    return previous_file, dataset_future
+
+
+def infinite_data_loader(checkpoint):
+    global global_step, training_steps, overflow_buf, files
+    epoch = 0
+    pool = ProcessPoolExecutor(1)
+
+    # Note: We loop infinitely over epochs, termination is handled via iteration count
+    while True:  # one epoch
+        (f_start_id, files, num_files, data_file, previous_file,
+         shared_file_list, remainder) = setup_files(epoch, checkpoint)
+
+        """ first data_loader """
+        train_data = pretraining_dataset(data_file, args.max_predictions_per_seq)
+        train_sampler = RandomSampler(train_data)
+        train_dataloader = DataLoader(
+            train_data, sampler=train_sampler,
+            batch_size=args.train_batch_size * args.n_gpu,
+            num_workers=4, pin_memory=True,
+        )
+        # shared_file_list["0"] = (train_dataloader, data_file)
+
+        overflow_buf = None
+        if args.allreduce_post_accumulation:
+            overflow_buf = torch.cuda.IntTensor([0])
+
+        for f_id in range(f_start_id + 1, len(files)):
+            previous_file, dataset_future = prefetch_next_file(
+                pool, f_id, files, num_files, previous_file, shared_file_list, remainder)
+
+            train_iter = tqdm(train_dataloader, desc="Iteration") if is_main_process() else train_dataloader
+            for step, batch in enumerate(train_iter):
+                training_steps += 1
+                yield epoch, f_id, step, batch
+
+            if global_step >= args.max_steps:
+                del train_dataloader
+                # thread.join()
+                return args  # raise StopIteration
+
+            del train_dataloader
+            # thread.join()
+            # Make sure pool has finished and switch train_dataloader
+            # NOTE: Will block until complete
+            train_dataloader, data_file = dataset_future.result(timeout=None)
+
+        epoch += 1
+
+
+def main():
+    global global_step, average_loss, training_steps, most_recent_ckpts_paths, device
+    args = parse_arguments()
     device, args = setup_training(args)
 
-    # Prepare optimizer
     model, optimizer, checkpoint, global_step = prepare_model_and_optimizer(args, device)
 
-    if is_main_process():
-        print("SEED {}".format(args.seed))
+    if is_main_process(): print("SEED {}".format(args.seed))
 
     if args.do_train:
         if is_main_process():
@@ -429,148 +737,14 @@ def main():
         model.train()
         most_recent_ckpts_paths = []
         average_loss = 0.0  # averaged loss every args.log_freq steps
-        epoch = 0
         training_steps = 0
 
-        pool = ProcessPoolExecutor(1)
-
-        # Note: We loop infinitely over epochs, termination is handled via iteration count
-        while True:
-            if not args.resume_from_checkpoint or epoch > 0 or args.phase2:
-                files = [os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if
-                         os.path.isfile(os.path.join(args.input_dir, f)) and 'training' in f]
-                files.sort()
-                num_files = len(files)
-                random.shuffle(files)
-                f_start_id = 0
-            else:
-                f_start_id = checkpoint['files'][0]
-                files = checkpoint['files'][1:]
-                args.resume_from_checkpoint = False
-                num_files = len(files)
-
-            shared_file_list = {}
-
-            if torch.distributed.is_initialized() and torch.distributed.get_world_size() > num_files:
-                remainder = torch.distributed.get_world_size() % num_files
-                data_file = files[(
-                                              f_start_id * torch.distributed.get_world_size() + torch.distributed.get_rank() + remainder * f_start_id) % num_files]
-            else:
-                data_file = files[
-                    (f_start_id * torch.distributed.get_world_size() + torch.distributed.get_rank()) % num_files]
-
-            previous_file = data_file
-
-            train_data = pretraining_dataset(data_file, args.max_predictions_per_seq)
-            train_sampler = RandomSampler(train_data)
-            train_dataloader = DataLoader(train_data, sampler=train_sampler,
-                                          batch_size=args.train_batch_size * args.n_gpu, num_workers=4,
-                                          pin_memory=True)
-            # shared_file_list["0"] = (train_dataloader, data_file)
-
-            overflow_buf = None
-            if args.allreduce_post_accumulation:
-                overflow_buf = torch.cuda.IntTensor([0])
-
-            for f_id in range(f_start_id + 1, len(files)):
-
-                if torch.distributed.get_world_size() > num_files:
-                    data_file = files[(f_id * torch.distributed.get_world_size() + torch.distributed.get_rank() + remainder * f_id) % num_files]
-                else:
-                    data_file = files[
-                        (f_id * torch.distributed.get_world_size() + torch.distributed.get_rank()) % num_files]
-
-                logger.info("file no %s file %s" % (f_id, previous_file))
-
-                previous_file = data_file
-
-                dataset_future = pool.submit(create_pretraining_dataset, data_file, args.max_predictions_per_seq,
-                                             shared_file_list, args)
-
-                train_iter = tqdm(train_dataloader, desc="Iteration") if is_main_process() else train_dataloader
-                for step, batch in enumerate(train_iter):
-
-                    training_steps += 1
-                    batch = [t.to(device) for t in batch]
-                    input_ids, segment_ids, input_mask, masked_lm_labels, next_sentence_labels = batch
-                    loss = model(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_mask,
-                                 masked_lm_labels=masked_lm_labels, next_sentence_label=next_sentence_labels,
-                                 checkpoint_activations=args.checkpoint_activations)
-                    if args.n_gpu > 1:
-                        loss = loss.mean()  # mean() to average on multi-gpu.
-
-                    divisor = args.gradient_accumulation_steps
-                    if args.gradient_accumulation_steps > 1:
-                        if not args.allreduce_post_accumulation:
-                            # this division was merged into predivision
-                            loss = loss / args.gradient_accumulation_steps
-                            divisor = 1.0
-                    if args.fp16:
-                        with amp.scale_loss(loss, optimizer,
-                                            delay_overflow_check=args.allreduce_post_accumulation) as scaled_loss:
-                            scaled_loss.backward()
-                    else:
-                        loss.backward()
-                    average_loss += loss.item()
-
-                    if training_steps % args.gradient_accumulation_steps == 0:
-                        global_step = take_optimizer_step(args, optimizer, model, overflow_buf, global_step)
-
-                    if global_step >= args.max_steps:
-                        last_num_steps = int(training_steps / args.gradient_accumulation_steps) % args.log_freq
-                        last_num_steps = args.log_freq if last_num_steps == 0 else last_num_steps
-                        average_loss = torch.tensor(average_loss, dtype=torch.float32).cuda()
-                        average_loss = average_loss / (last_num_steps * divisor)
-                        if torch.distributed.is_initialized():
-                            average_loss /= torch.distributed.get_world_size()
-                            torch.distributed.all_reduce(average_loss)
-                        if is_main_process():
-                            logger.info("Total Steps:{} Final Loss = {}".format(
-                                training_steps / args.gradient_accumulation_steps, average_loss.item()))
-                    elif training_steps % (args.log_freq * args.gradient_accumulation_steps) == 0:
-                        if is_main_process():
-                            print("Step:{} Average Loss = {} Step Loss = {} LR {}".format(global_step, average_loss / (
-                                    args.log_freq * divisor),
-                                                                                          loss.item() * args.gradient_accumulation_steps / divisor,
-                                                                                          optimizer.param_groups[0][
-                                                                                              'lr']))
-                        average_loss = 0
-
-                    if global_step >= args.max_steps or training_steps % (
-                            args.num_steps_per_checkpoint * args.gradient_accumulation_steps) == 0:
-                        if is_main_process():
-                            # Save a trained model
-                            logger.info("** ** * Saving fine - tuned model ** ** * ")
-                            model_to_save = model.module if hasattr(model,
-                                                                    'module') else model  # Only save the model it-self
-                            if args.resume_step < 0 or not args.phase2:
-                                output_save_file = os.path.join(args.output_dir, "ckpt_{}.pt".format(global_step))
-                            else:
-                                output_save_file = os.path.join(args.output_dir,
-                                                                "ckpt_{}.pt".format(global_step + args.phase1_end_step))
-                            if args.do_train:
-                                torch.save({'model': model_to_save.state_dict(),
-                                            'optimizer': optimizer.state_dict(),
-                                            'master params': list(amp.master_params(optimizer)),
-                                            'files': [f_id] + files}, output_save_file)
-
-                                most_recent_ckpts_paths.append(output_save_file)
-                                if len(most_recent_ckpts_paths) > 3:
-                                    ckpt_to_be_removed = most_recent_ckpts_paths.pop(0)
-                                    os.remove(ckpt_to_be_removed)
-
-                        if global_step >= args.max_steps:
-                            del train_dataloader
-                            # thread.join()
-                            return args
-
-                del train_dataloader
-                # thread.join()
-                # Make sure pool has finished and switch train_dataloader
-                # NOTE: Will block until complete
-                train_dataloader, data_file = dataset_future.result(timeout=None)
-
-            epoch += 1
+        train_loader = infinite_data_loader(checkpoint)
+        prune_manager = ProximalBertPruningManager.from_yaml_file('')
+        print(prune_manager.to_json_string())
+        prune_manager.setup_learner(model, optimizer, train_loader)
+        prune_manager.admm_prune()
+        prune_manager.masked_retrain()
 
 
 if __name__ == "__main__":

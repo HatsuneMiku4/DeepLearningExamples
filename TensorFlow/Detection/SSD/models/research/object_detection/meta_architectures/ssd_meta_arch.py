@@ -355,7 +355,7 @@ class SSDMetaArch(model.DetectionModel):
         as inputs and return foreground_weights, background_weights. See
         expected_classification_loss_by_expected_sampling and
         expected_classification_loss_by_reweighting_unmatched_anchors in
-        third_party/tensorflow_models/object_detection/utils/ops.py as examples.
+        third_party/tensorflow_models/object_detection/admm_utils/ops.py as examples.
       use_confidences_as_targets: Whether to use groundtruth_condifences field
         to assign the targets.
       implicit_example_weight: a float number that specifies the weight used

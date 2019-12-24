@@ -29,8 +29,8 @@ import tokenization
 import tensorflow as tf
 import horovod.tensorflow as hvd
 import time
-from utils.utils import LogEvalRunHook, LogTrainRunHook
-from utils.create_glue_data import *
+from admm_utils.utils import LogEvalRunHook, LogTrainRunHook
+from admm_utils.create_glue_data import *
 import numpy as np
 
 flags = tf.flags

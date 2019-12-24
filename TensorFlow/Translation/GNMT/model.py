@@ -45,10 +45,10 @@ from tensorflow.python.ops import math_ops
 import attention_wrapper
 import model_helper
 import beam_search_decoder
-from utils import iterator_utils
-from utils import math_utils
-from utils import misc_utils as utils
-from utils import vocab_utils
+from admm_utils import iterator_utils
+from admm_utils import math_utils
+from admm_utils import misc_utils as utils
+from admm_utils import vocab_utils
 
 utils.check_tensorflow_version()
 

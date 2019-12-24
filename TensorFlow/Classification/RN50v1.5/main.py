@@ -23,11 +23,11 @@ warnings.simplefilter("ignore")
 import tensorflow as tf
 
 import horovod.tensorflow as hvd
-from utils import hvd_utils
+from admm_utils import hvd_utils
 
 from runtime import Runner
 
-from utils.cmdline_helper import parse_cmdline
+from admm_utils.cmdline_helper import parse_cmdline
 
 if __name__ == "__main__":
 

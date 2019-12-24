@@ -35,7 +35,7 @@ import horovod.tensorflow as hvd
 
 from datasets.core import BaseDataset
 
-from utils import hvd_utils
+from admm_utils import hvd_utils
 
 from dllogger.logger import LOGGER
 

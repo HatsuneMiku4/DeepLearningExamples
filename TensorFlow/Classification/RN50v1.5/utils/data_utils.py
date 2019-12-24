@@ -20,9 +20,9 @@ import sys
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
-from utils import image_processing
-from utils import hvd_utils
-from utils import dali_utils
+from admm_utils import image_processing
+from admm_utils import hvd_utils
+from admm_utils import dali_utils
 
 __all__ = ["get_synth_input_fn", "normalized_inputs"]
 

@@ -25,12 +25,12 @@ import horovod.tensorflow as hvd
 from model import layers
 from model import blocks
 
-from utils import hvd_utils
+from admm_utils import hvd_utils
 
-from utils import losses
-from utils import metrics
+from admm_utils import losses
+from admm_utils import metrics
 
-from utils import image_processing
+from admm_utils import image_processing
 
 from dllogger.logger import LOGGER
 

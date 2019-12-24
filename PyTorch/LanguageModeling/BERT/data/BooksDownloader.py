@@ -21,7 +21,8 @@ class BooksDownloader:
 
 
     def download(self):
-        bookscorpus_download_command = 'python3 /workspace/bookcorpus/download_files.py --list /workspace/bookcorpus/url_list.jsonl --out'
+        root = '/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/data'
+        bookscorpus_download_command = f'python3 {root}/bookcorpus/download_files.py --list {root}/bookcorpus/url_list.jsonl --out'
         bookscorpus_download_command += ' ' + self.save_path + '/bookscorpus'
         bookscorpus_download_command += ' --trash-bad-count'
         bookscorpus_download_process = subprocess.run(bookscorpus_download_command, shell=True, check=True)

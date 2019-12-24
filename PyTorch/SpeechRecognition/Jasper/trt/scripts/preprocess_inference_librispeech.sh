@@ -15,21 +15,21 @@
 
 # Constructs JSON manifests for inference-subset of Librispeech corpus.
 
-python ./utils/convert_librispeech.py \
+python ./admm_utils/convert_librispeech.py \
     --input_dir /datasets/LibriSpeech/dev-clean \
     --dest_dir /datasets/LibriSpeech/dev-clean-wav \
     --output_json /datasets/LibriSpeech/librispeech-dev-clean-wav.json
-python ./utils/convert_librispeech.py \
+python ./admm_utils/convert_librispeech.py \
     --input_dir /datasets/LibriSpeech/dev-other \
     --dest_dir /datasets/LibriSpeech/dev-other-wav \
     --output_json /datasets/LibriSpeech/librispeech-dev-other-wav.json
 
 
-python ./utils/convert_librispeech.py \
+python ./admm_utils/convert_librispeech.py \
     --input_dir /datasets/LibriSpeech/test-clean \
     --dest_dir /datasets/LibriSpeech/test-clean-wav \
     --output_json /datasets/LibriSpeech/librispeech-test-clean-wav.json
-python ./utils/convert_librispeech.py \
+python ./admm_utils/convert_librispeech.py \
     --input_dir /datasets/LibriSpeech/test-other \
     --dest_dir /datasets/LibriSpeech/test-other-wav \
     --output_json /datasets/LibriSpeech/librispeech-test-other-wav.json

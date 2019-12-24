@@ -16,6 +16,8 @@ import math
 import torch
 from torch.optim.optimizer import Optimizer
 from apex.optimizers import FP16_Optimizer
+# https://github.com/NVIDIA/apex/issues/593
+# from apex.contrib.optimizers import FP16_Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 
 

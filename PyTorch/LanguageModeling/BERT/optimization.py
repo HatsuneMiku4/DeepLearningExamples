@@ -108,6 +108,10 @@ class BertLAMB(Optimizer):
         self.warmup = warmup
         self.max_steps = t_total
         self.updates_created = False
+        self.manual_lr = None
+
+    def set_lr(self, lr):
+        self.manual_lr = lr
 
     def get_lr(self):
         lr = []
@@ -116,11 +120,14 @@ class BertLAMB(Optimizer):
                 state = self.state[p]
                 if len(state) == 0:
                     return [0]
-                if group['t_total'] != -1:
-                    schedule_fct = SCHEDULES[group['schedule']]
-                    lr_scheduled = group['lr'] * schedule_fct(state['step'] / group['t_total'], group['warmup'])
+                if self.manual_lr is None:
+                    if group['t_total'] != -1:
+                        schedule_fct = SCHEDULES[group['schedule']]
+                        lr_scheduled = group['lr'] * schedule_fct(state['step'] / group['t_total'], group['warmup'])
+                    else:
+                        lr_scheduled = group['lr']
                 else:
-                    lr_scheduled = group['lr']
+                    lr_scheduled = self.manual_lr
                 lr.append(lr_scheduled)
         return lr
 
@@ -261,8 +268,11 @@ class BertLAMB(Optimizer):
         self.step_count = state['step']
         # Calculate learning rate from input schedule
         # if self.max_steps != -1:
-        schedule_fct = SCHEDULES[self.schedule]
-        lr_scheduled = self.learning_rate * schedule_fct(self.step_count / self.max_steps, self.warmup)
+        if self.manual_lr is not None:
+            lr_scheduled = self.manual_lr
+        else:
+            schedule_fct = SCHEDULES[self.schedule]
+            lr_scheduled = self.learning_rate * schedule_fct(self.step_count / self.max_steps, self.warmup)
         if torch.distributed.get_rank() == 0:
             print("Step {} LR {}".format(self.step_count, lr_scheduled))
         # else:

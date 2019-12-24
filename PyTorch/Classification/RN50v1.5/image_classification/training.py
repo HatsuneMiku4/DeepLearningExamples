@@ -166,7 +166,7 @@ def get_train_step(model_and_loss, optimizer, fp16, use_amp = False, batch_size_
         input_var = Variable(input)
         target_var = Variable(target)
         loss, output = model_and_loss(input_var, target_var)
-        prec1, prec5 = torch.zeros(1), torch.zeros(1) #utils.accuracy(output.data, target, topk=(1, 5))
+        prec1, prec5 = torch.zeros(1), torch.zeros(1) #admm_utils.accuracy(output.data, target, topk=(1, 5))
 
         if torch.distributed.is_initialized():
             reduced_loss = utils.reduce_tensor(loss.data)

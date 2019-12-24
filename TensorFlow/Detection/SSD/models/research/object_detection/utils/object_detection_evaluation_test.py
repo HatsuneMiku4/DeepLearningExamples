@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tests for object_detection.utils.object_detection_evaluation."""
+"""Tests for object_detection.admm_utils.object_detection_evaluation."""
 
 from absl.testing import parameterized
 import numpy as np

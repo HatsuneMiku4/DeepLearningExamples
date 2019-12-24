@@ -36,9 +36,9 @@ from datasets import known_datasets
 
 from model.unet import UNet_v1
 
-from utils import hvd_utils
+from admm_utils import hvd_utils
 
-from utils.hooks import ProfilerHook
+from admm_utils.hooks import ProfilerHook
 
 from dllogger.logger import LOGGER
 import dllogger.logger as dllg

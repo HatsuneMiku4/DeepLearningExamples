@@ -40,7 +40,7 @@ import attention_wrapper
 import block_lstm
 import model
 import model_helper
-from utils import misc_utils as utils
+from admm_utils import misc_utils as utils
 
 
 class GNMTModel(model.BaseModel):

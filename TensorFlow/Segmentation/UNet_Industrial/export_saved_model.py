@@ -51,7 +51,7 @@ from dllogger.logger import LOGGER
 from model.unet import UNet_v1
 from model.blocks.activation_blck import authorized_activation_fn
 
-from utils.cmdline_helper import _add_bool_argument
+from admm_utils.cmdline_helper import _add_bool_argument
 
 
 def get_export_flags():

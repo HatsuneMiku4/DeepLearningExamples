@@ -100,7 +100,7 @@ if [ "$mode" != "eval" ]; then
 throughput=`cat $LOGFILE | grep -E 'Iteration.*[0-9.]+(it/s)' | tail -1 | egrep -o '[0-9.]+(s/it|it/s)' | head -1 | egrep -o '[0-9.]+'`
 train_perf=$(awk 'BEGIN {print ('$throughput' * '$num_gpu' * '$batch_size')}')
 echo " training throughput: $train_perf"
-fi
+fiD
 
 if [ "$mode" != "train" ]; then
     if [ "$mode" != "prediction" ]; then

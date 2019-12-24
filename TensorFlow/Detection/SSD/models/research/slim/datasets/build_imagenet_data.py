@@ -307,7 +307,7 @@ def _process_image(filename, coder):
 
   Args:
     filename: string, path to an image file e.g., '/path/to/example.JPG'.
-    coder: instance of ImageCoder to provide TensorFlow image coding utils.
+    coder: instance of ImageCoder to provide TensorFlow image coding admm_utils.
   Returns:
     image_buffer: string, JPEG encoding of RGB image.
     height: integer, image height in pixels.
@@ -343,7 +343,7 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
   """Processes and saves list of images as TFRecord in 1 thread.
 
   Args:
-    coder: instance of ImageCoder to provide TensorFlow image coding utils.
+    coder: instance of ImageCoder to provide TensorFlow image coding admm_utils.
     thread_index: integer, unique batch to run index is within [0, len(ranges)).
     ranges: list of pairs of integers specifying ranges of each batches to
       analyze in parallel.

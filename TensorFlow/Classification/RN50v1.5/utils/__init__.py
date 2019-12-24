@@ -16,15 +16,15 @@
 # limitations under the License.
 # ==============================================================================
 
-from utils import hooks
+from admm_utils import hooks
 
-from utils import var_storage
+from admm_utils import var_storage
 
-from utils import cmdline_helper
+from admm_utils import cmdline_helper
 
-from utils import data_utils
-from utils import image_processing
+from admm_utils import data_utils
+from admm_utils import image_processing
 
-from utils import learning_rate
+from admm_utils import learning_rate
 
-from utils import dali_utils
+from admm_utils import dali_utils

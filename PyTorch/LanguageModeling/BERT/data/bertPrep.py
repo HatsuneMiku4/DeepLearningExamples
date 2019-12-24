@@ -72,13 +72,13 @@ def main(args):
             books_path = directory_structure['download'] + '/bookscorpus'
             # books_path = directory_structure['download']
             output_filename = directory_structure['formatted'] + '/bookscorpus_one_book_per_line.txt'
-            books_formatter = BookscorpusTextFormatting.BookscorpusTextFormatting(books_path, output_filename,
-                                                                                  recursive=True)
+            books_formatter = BookscorpusTextFormatting.BookscorpusTextFormatting(books_path, output_filename, recursive=True)
             books_formatter.merge()
 
         elif args.dataset == 'wikicorpus_en':
             if args.skip_wikiextractor == 0:
-                path_to_wikiextractor_in_container = '/workspace/wikiextractor/WikiExtractor.py'
+                root = '/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/data'
+                path_to_wikiextractor_in_container = f'{root}/wikiextractor/WikiExtractor.py'
                 wikiextractor_command = path_to_wikiextractor_in_container + ' ' + directory_structure[
                     'download'] + '/' + args.dataset + '/wikicorpus_en.xml ' + '-b 100M --processes ' + str(
                     args.n_processes) + ' -o ' + directory_structure['extracted'] + '/' + args.dataset
@@ -88,8 +88,7 @@ def main(args):
 
             wiki_path = directory_structure['extracted'] + '/wikicorpus_en'
             output_filename = directory_structure['formatted'] + '/wikicorpus_en_one_article_per_line.txt'
-            wiki_formatter = WikicorpusTextFormatting.WikicorpusTextFormatting(wiki_path, output_filename,
-                                                                               recursive=True)
+            wiki_formatter = WikicorpusTextFormatting.WikicorpusTextFormatting(wiki_path, output_filename, recursive=True)
             wiki_formatter.merge()
 
         elif args.dataset == 'wikicorpus_zh':
@@ -191,7 +190,6 @@ def main(args):
         #
         # last_process.wait()
 
-
     elif args.action == 'create_hdf5_files':
         last_process = None
 
@@ -199,7 +197,8 @@ def main(args):
             os.makedirs(directory_structure['hdf5'] + "/" + args.dataset)
 
         def create_record_worker(filename_prefix, shard_id, output_format='hdf5'):
-            bert_preprocessing_command = 'python /workspace/bert/create_pretraining_data.py'
+            root = "/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert"
+            bert_preprocessing_command = f'python {root}/create_pretraining_data.py'
             bert_preprocessing_command += ' --input_file=' + directory_structure[
                 'sharded'] + '/' + args.dataset + '/' + filename_prefix + '_' + str(shard_id) + '.txt'
             bert_preprocessing_command += ' --output_file=' + directory_structure[

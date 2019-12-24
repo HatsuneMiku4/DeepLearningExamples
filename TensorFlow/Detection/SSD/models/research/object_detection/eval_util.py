@@ -35,7 +35,7 @@ slim = tf.contrib.slim
 
 # A dictionary of metric names to classes that implement the metric. The classes
 # in the dictionary must implement
-# utils.object_detection_evaluation.DetectionEvaluator interface.
+# admm_utils.object_detection_evaluation.DetectionEvaluator interface.
 EVAL_METRICS_CLASS_DICT = {
     'coco_detection_metrics':
         coco_evaluation.CocoDetectionEvaluator,

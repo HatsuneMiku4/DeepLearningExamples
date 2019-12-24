@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo "Container nvidia build = " $NVIDIA_BUILD_ID
+#echo "Container nvidia build = " $NVIDIA_BUILD_ID
 train_batch_size=${1:-8192}
 learning_rate=${2:-"6e-3"}
 precision=${3:-"fp16"}
@@ -39,8 +39,8 @@ gradient_accumulation_steps_phase2=${21:-512}
 
 DATASET=hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus # change this for other datasets
 DATA_DIR=$BERT_PREP_WORKING_DIR/${DATASET}/
-BERT_CONFIG=bert_config.json
-RESULTS_DIR=/workspace/bert/results
+BERT_CONFIG=$BERT_CONFIG
+RESULTS_DIR=/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/results
 CHECKPOINTS_DIR=$RESULTS_DIR/checkpoints
 
 
@@ -101,7 +101,7 @@ fi
 
 echo $DATA_DIR
 INPUT_DIR=$DATA_DIR
-CMD=" /workspace/bert/run_pretraining.py"
+CMD=" /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/run_pretraining.py"
 CMD+=" --input_dir=$DATA_DIR"
 CMD+=" --output_dir=$CHECKPOINTS_DIR"
 CMD+=" --config_file=$BERT_CONFIG"
@@ -194,7 +194,7 @@ fi
 
 echo $DATA_DIR
 INPUT_DIR=$DATA_DIR
-CMD=" /workspace/bert/run_pretraining.py"
+CMD=" /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/run_pretraining.py"
 CMD+=" --input_dir=$DATA_DIR"
 CMD+=" --output_dir=$CHECKPOINTS_DIR"
 CMD+=" --config_file=$BERT_CONFIG"

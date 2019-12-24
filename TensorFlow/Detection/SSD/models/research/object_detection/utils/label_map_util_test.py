@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for object_detection.utils.label_map_util."""
+"""Tests for object_detection.admm_utils.label_map_util."""
 
 import os
 import tensorflow as tf

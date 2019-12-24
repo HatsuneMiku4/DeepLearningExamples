@@ -24,9 +24,9 @@ import horovod.tensorflow as hvd
 
 from model import resnet_v1_5
 
-from utils import hooks
-from utils import data_utils
-from utils import hvd_utils
+from admm_utils import hooks
+from admm_utils import data_utils
+from admm_utils import hvd_utils
 
 from runtime import runner_utils
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Model construction utils
+""" Model construction admm_utils
 
 This module provides a convenient way to create different topologies
 based around UNet.

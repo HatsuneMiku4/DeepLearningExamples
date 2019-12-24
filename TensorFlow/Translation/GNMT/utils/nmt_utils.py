@@ -35,7 +35,7 @@ import time
 import numpy as np
 import tensorflow as tf
 
-from utils import misc_utils as utils
+from admm_utils import misc_utils as utils
 
 __all__ = ["get_translation"]
 

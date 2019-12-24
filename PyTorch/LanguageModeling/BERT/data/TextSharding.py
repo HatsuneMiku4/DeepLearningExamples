@@ -143,8 +143,8 @@ class Sharding:
 
     def distribute_articles_over_shards(self):
         print('Start: Distribute Articles Over Shards')
-        assert len(
-            self.articles) >= self.n_training_shards + self.n_test_shards, 'There are fewer articles than shards. Please add more data or reduce the number of shards requested.'
+        assert len(self.articles) >= self.n_training_shards + self.n_test_shards, \
+            'There are fewer articles than shards. Please add more data or reduce the number of shards requested.'
 
         # Create dictionary with - key: sentence count per article, value: article id number
         sentence_counts = defaultdict(lambda: [])
@@ -246,8 +246,7 @@ class Sharding:
                 while len(sentence_counts[nominal_next_article_size]) == 0 and nominal_next_article_size > 0:
                     nominal_next_article_size -= 1
 
-                if nominal_next_article_size not in sentence_counts or nominal_next_article_size is 0 or test_counts[
-                    fidx] > test_median:
+                if nominal_next_article_size not in sentence_counts or nominal_next_article_size is 0 or test_counts[fidx] > test_median:
                     continue  # skip adding to this file, will come back later if no file can accept unused articles
 
                 current_article_id = sentence_counts[nominal_next_article_size][-1]
@@ -319,7 +318,8 @@ nltk.download('punkt')
 
 
 class NLTKSegmenter:
-    def __init(self):
+
+    def __init__(self):
         pass
 
     def segment_string(self, article):

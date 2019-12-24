@@ -23,9 +23,9 @@ import numpy as np
 import six
 import tensorflow as tf
 
-from utils import math_utils
-from utils import misc_utils as utils
-from utils import vocab_utils
+from admm_utils import math_utils
+from admm_utils import misc_utils as utils
+from admm_utils import vocab_utils
 
 __all__ = [
     "get_initializer", "create_emb_for_encoder_and_decoder", "create_rnn_cell",

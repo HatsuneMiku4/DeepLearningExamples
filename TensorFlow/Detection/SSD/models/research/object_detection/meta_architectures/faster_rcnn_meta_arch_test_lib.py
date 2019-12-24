@@ -651,7 +651,7 @@ class FasterRCNNMetaArchTestBase(test_case.TestCase, parameterized.TestCase):
         'rpn_objectness_predictions_with_background':
         (2, image_size * image_size * 9, 2)
     }
-    # TODO(rathodv): Possibly change utils/test_case.py to accept dictionaries
+    # TODO(rathodv): Possibly change admm_utils/test_case.py to accept dictionaries
     # and return dicionaries so don't have to rely on the order of tensors.
     self.assertAllEqual(results[0].shape,
                         expected_shapes['refined_box_encodings'])

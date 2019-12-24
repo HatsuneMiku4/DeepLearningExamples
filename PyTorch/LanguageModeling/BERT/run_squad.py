@@ -40,7 +40,7 @@ from schedulers import LinearWarmUpScheduler
 from modeling import BertForQuestionAnswering, BertConfig, WEIGHTS_NAME, CONFIG_NAME
 from optimization import BertAdam, warmup_linear
 from tokenization import (BasicTokenizer, BertTokenizer, whitespace_tokenize)
-from .utils import is_main_process
+from admm_utils import is_main_process
 
 if sys.version_info[0] == 2:
     import cPickle as pickle
@@ -438,8 +438,7 @@ def _check_is_max_context(doc_spans, cur_span_index, position):
     return cur_span_index == best_span_index
 
 
-RawResult = collections.namedtuple("RawResult",
-                                   ["unique_id", "start_logits", "end_logits"])
+RawResult = collections.namedtuple("RawResult", ["unique_id", "start_logits", "end_logits"])
 
 
 def write_predictions(all_examples, all_features, all_results, n_best_size,
@@ -766,11 +765,7 @@ def _compute_softmax(scores):
     return probs
 
 
-# noinspection PyUnresolvedReferences
-def main():
-    parser = argparse.ArgumentParser()
-
-    ## Required parameters
+def add_arguments(parser):
     parser.add_argument("--bert_model", default=None, type=str, required=True,
                         help="Bert pre-trained model selected in the list: bert-base-uncased, "
                              "bert-large-uncased, bert-base-cased, bert-large-cased, bert-base-multilingual-uncased, "
@@ -860,6 +855,13 @@ def main():
     parser.add_argument('--log_freq',
                         type=int, default=50,
                         help='frequency of logging loss.')
+
+
+# noinspection PyUnresolvedReferences
+def main():
+    parser = argparse.ArgumentParser()
+    ## Required parameters
+    add_arguments(parser)
     args = parser.parse_args()
 
     if args.local_rank == -1 or args.no_cuda:
@@ -883,8 +885,7 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
+    if n_gpu > 0: torch.cuda.manual_seed_all(args.seed)
 
     if not args.do_train and not args.do_predict:
         raise ValueError("At least one of `do_train` or `do_predict` must be True.")
@@ -935,7 +936,8 @@ def main():
     model.to(device)
     if args.fp16 and args.old:
         model.half()
-        # Prepare optimizer
+
+    # Prepare optimizer
     param_optimizer = list(model.named_parameters())
 
     # hack to remove pooler, which is not used
@@ -953,6 +955,7 @@ def main():
                 # from fused_adam_local import FusedAdamBert as FusedAdam
                 from apex.optimizers import FusedAdam
                 from apex.optimizers import FP16_Optimizer
+                # from apex.contrib.optimizers import FP16_Optimizer
             except ImportError:
                 raise ImportError(
                     "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")

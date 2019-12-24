@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tests for object_detection.utils.dataset_util."""
+"""Tests for object_detection.admm_utils.dataset_util."""
 
 import os
 import tensorflow as tf

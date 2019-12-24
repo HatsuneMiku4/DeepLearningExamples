@@ -40,9 +40,9 @@ import horovod.tensorflow as hvd
 from dllogger.logger import LOGGER
 
 from model.unet import unet_v1
-from utils.data_loader import Dataset
-from utils.hooks.profiler_hook import ProfilerHook
-from utils.var_storage import model_variable_scope
+from admm_utils.data_loader import Dataset
+from admm_utils.hooks.profiler_hook import ProfilerHook
+from admm_utils.var_storage import model_variable_scope
 
 
 # Class Dice coefficient averaged over batch
@@ -172,7 +172,7 @@ class Runner():
         _max_steps (int): Number of steps for training
         _classifier (tf.estimator.Estimator): Estimator used for training and validation
         _dataset (tf.data.Dataset): Source of sample and label pairs
-        _training_hooks (tf.train.SessionRunHook): Parallel training, and benchmarking utils
+        _training_hooks (tf.train.SessionRunHook): Parallel training, and benchmarking admm_utils
 
     """
 

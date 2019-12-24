@@ -25,13 +25,13 @@ import horovod.tensorflow as hvd
 from model import layers
 from model import blocks
 
-from utils import var_storage
-from utils import hvd_utils
+from admm_utils import var_storage
+from admm_utils import hvd_utils
 
-from utils.data_utils import normalized_inputs
+from admm_utils.data_utils import normalized_inputs
 
-from utils.learning_rate import learning_rate_scheduler
-from utils.optimizers import FixedLossScalerOptimizer
+from admm_utils.learning_rate import learning_rate_scheduler
+from admm_utils.optimizers import FixedLossScalerOptimizer
 
 from dllogger.logger import LOGGER
 

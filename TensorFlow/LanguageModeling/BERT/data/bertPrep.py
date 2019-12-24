@@ -166,7 +166,7 @@ def main(args):
         last_process = None
 
         def create_record_worker(filename_prefix, shard_id, output_format='tfrecord', split='training'):
-            bert_preprocessing_command = 'python /workspace/bert/utils/create_pretraining_data.py'
+            bert_preprocessing_command = 'python /workspace/bert/admm_utils/create_pretraining_data.py'
             bert_preprocessing_command += ' --input_file=' + directory_structure['sharded'] + '/' + args.dataset + '/' + split + '/' + filename_prefix + '_' + str(shard_id) + '.txt'
             bert_preprocessing_command += ' --output_file=' + directory_structure['tfrecord'] + '/' + args.dataset + '/' + split + '/' + filename_prefix + '_' + str(shard_id) + '.' + output_format
             bert_preprocessing_command += ' --vocab_file=' + args.vocab_file
@@ -208,7 +208,7 @@ def main(args):
         last_process = None
 
         def create_record_worker(filename_prefix, shard_id, output_format='hdf5'):
-            bert_preprocessing_command = 'python /workspace/bert/utils/create_pretraining_data.py'
+            bert_preprocessing_command = 'python /workspace/bert/admm_utils/create_pretraining_data.py'
             bert_preprocessing_command += ' --input_file=' + directory_structure['sharded'] + '/' + args.dataset + '/' + filename_prefix + '_' + str(shard_id) + '.txt'
             bert_preprocessing_command += ' --output_file=' + directory_structure['hdf5'] + '/' + args.dataset + '/' + filename_prefix + '_' + str(shard_id) + '.' + output_format
             bert_preprocessing_command += ' --vocab_file=' + args.vocab_file

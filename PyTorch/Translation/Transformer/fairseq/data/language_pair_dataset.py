@@ -75,7 +75,7 @@ def collate(samples, pad_idx, eos_idx, left_pad_source=True, left_pad_target=Fal
 
 
 class LanguagePairDataset(FairseqDataset):
-    """A pair of torch.utils.data.Datasets."""
+    """A pair of torch.admm_utils.data.Datasets."""
 
     def __init__(
         self, src, src_sizes, src_dict,

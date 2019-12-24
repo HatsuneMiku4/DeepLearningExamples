@@ -33,7 +33,7 @@ import os
 
 import tensorflow as tf
 
-from utils import vocab_utils
+from admm_utils import vocab_utils
 
 
 def get_effective_epoch_size(hparams, train=True):

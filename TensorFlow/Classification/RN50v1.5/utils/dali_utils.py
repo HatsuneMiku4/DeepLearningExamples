@@ -20,8 +20,8 @@ import sys
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
-from utils import image_processing
-from utils import hvd_utils
+from admm_utils import image_processing
+from admm_utils import hvd_utils
 
 from nvidia import dali
 import nvidia.dali.plugin.tf as dali_tf

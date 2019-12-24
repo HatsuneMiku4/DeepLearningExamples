@@ -23,7 +23,7 @@ from dllogger.logger import LOGGER
 
 import horovod.tensorflow as hvd
 
-from utils import hvd_utils
+from admm_utils import hvd_utils
 
 __all__ = ["_log_hparams"]
 

@@ -19,10 +19,10 @@
 #
 # ==============================================================================
 
-from utils import hooks
+from admm_utils import hooks
 
-from utils import cmdline_helper
-from utils import hvd_utils
-from utils import image_processing
-from utils import losses
-from utils import metrics
+from admm_utils import cmdline_helper
+from admm_utils import hvd_utils
+from admm_utils import image_processing
+from admm_utils import losses
+from admm_utils import metrics

@@ -187,8 +187,8 @@ def main():
     if args.ckpt_dir:
         if args.ckpt_step == -1:
             # retrieve latest model
-            model_names = [f for f in os.listdir(args.ckpt_dir) if f.endswith(".model")]
-            args.ckpt_step = max([int(x.split('.model')[0].split('_')[1].strip()) for x in model_names])
+            model_names = [f for f in os.listdir(args.ckpt_dir) if f.endswith(".pt")]
+            args.ckpt_step = max([int(x.split('.pt')[0].split('_')[1].strip()) for x in model_names])
             print("load model saved at iteraton", args.ckpt_step)
         model_file = os.path.join(args.ckpt_dir, "ckpt_" + str(args.ckpt_step) + ".pt")
     else:

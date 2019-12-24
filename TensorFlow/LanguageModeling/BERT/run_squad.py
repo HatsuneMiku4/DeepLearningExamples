@@ -35,8 +35,8 @@ from tensorflow.python.client import device_lib
 import modeling
 import optimization
 import tokenization
-from utils.create_squad_data import *
-from utils.utils import LogEvalRunHook, LogTrainRunHook
+from admm_utils.create_squad_data import *
+from admm_utils.utils import LogEvalRunHook, LogTrainRunHook
 
 flags = tf.flags
 

@@ -40,7 +40,7 @@ from argparse import ArgumentParser
 import torch
 import torch.nn as nn
 
-import utils
+import admm_utils
 import dataloading
 from neumf import NeuMF
 
@@ -242,7 +242,7 @@ def main():
                                        (torch.rand(local_batch,1),torch.rand(local_batch,1)))
 
     print(model)
-    print("{} parameters".format(utils.count_parameters(model)))
+    print("{} parameters".format(admm_utils.count_parameters(model)))
     LOGGER.log(key=tags.OPT_LR, value=args.learning_rate)
     LOGGER.log(key=tags.OPT_NAME, value="Adam")
     LOGGER.log(key=tags.OPT_HP_ADAM_BETA1, value=args.beta1)

@@ -46,10 +46,10 @@ from tensorflow.python.util import tf_contextlib
 
 import gnmt_model
 import model_helper
-from utils import iterator_utils
-from utils import misc_utils
-from utils import nmt_utils
-from utils import vocab_utils
+from admm_utils import iterator_utils
+from admm_utils import misc_utils
+from admm_utils import nmt_utils
+from admm_utils import vocab_utils
 from variable_mgr import variable_mgr
 from variable_mgr import variable_mgr_util
 

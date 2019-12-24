@@ -26,8 +26,8 @@ import os
 import numpy as np
 import tensorflow as tf
 
-from utils import math_utils
-from utils import misc_utils
+from admm_utils import math_utils
+from admm_utils import misc_utils
 
 from tensorflow.contrib.framework.python.framework import tensor_util
 from tensorflow.python.framework import function

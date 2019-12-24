@@ -6,7 +6,7 @@ from torch.utils.data.dataset import ConcatDataset as _ConcatDataset
 
 class ConcatDataset(_ConcatDataset):
     """
-    Same as torch.utils.data.dataset.ConcatDataset, but exposes an extra
+    Same as torch.admm_utils.data.dataset.ConcatDataset, but exposes an extra
     method for querying the sizes of the image
     """
 

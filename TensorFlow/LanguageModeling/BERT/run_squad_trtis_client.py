@@ -14,7 +14,7 @@
 import modeling
 import tokenization
 from tensorrtserver.api import ProtocolType, InferContext, ServerStatusContext, grpc_service_pb2_grpc, grpc_service_pb2, model_config_pb2
-from utils.create_squad_data import *
+from admm_utils.create_squad_data import *
 import grpc
 from run_squad import *
 import numpy as np
