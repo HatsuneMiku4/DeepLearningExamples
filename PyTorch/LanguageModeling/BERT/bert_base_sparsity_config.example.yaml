@@ -88,3 +88,7 @@ prune_ratios:
   bert.encoder.layer.11.output.dense.weight: 0.8
 
   bert.pooler.dense_act.weight: 0.8
+
+  cls.predictions.transform.dense_act.weight: 0.8
+  cls.predictions.decoder.weight: 0.8
+  cls.seq_relationship.weight: 0.8

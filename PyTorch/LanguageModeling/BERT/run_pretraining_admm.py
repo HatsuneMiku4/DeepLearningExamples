@@ -50,6 +50,7 @@ from concurrent.futures import ProcessPoolExecutor
 import sys
 sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm
+from tensorboardX import SummaryWriter
 
 
 global_step = 0
@@ -83,11 +84,20 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         'overwrite': False,
         'admm_ckpt_steps': 500,
         'retrain_ckpt_steps': 500,
+
+        'tensorboard_logdir': '.',
+        'tensorboard_json_path': './all_scalars.json',
     }
 
     # noinspection PyMethodOverriding
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.current_rho = None
+        self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
+
+    def __del__(self):
+        self.writer.export_scalars_to_json(self.tensorboard_json_path)
+        self.writer.close()
 
     # noinspection PyMethodOverriding
     def setup_learner(self, model, optimizer, train_loader):
@@ -121,6 +131,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         return mixed_loss
 
     def _train_masked_retrain(self):
+        self.current_rho = None
         self.setup_masking_hooks()
         for step in range(self.retrain_steps):
             self._train_one_step(step)
@@ -130,6 +141,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.remove_masking_hooks()
 
     def _train_admm_prune(self, current_rho):
+        self.current_rho = current_rho
         for step in range(self.admm_steps):
             self._train_one_step(step)
             if step % self.admm_ckpt_steps == 0:
@@ -149,7 +161,13 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             loss = loss.mean()  # mean() to average on multi-gpu.
 
         if self.cur_phase == PruningPhase.admm:
+            self.writer.add_scalar(f'loss/admm_orig_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
+        else:
+            self.writer.add_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
+
+        if self.cur_phase == PruningPhase.admm:
             loss = self.append_admm_loss(loss, my_step)
+            self.writer.add_scalar(f'loss/admm_mixed_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
 
         divisor = args.gradient_accumulation_steps
         if args.gradient_accumulation_steps > 1:
@@ -166,6 +184,12 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         average_loss += loss.item()
 
         self.update_lr(my_step)
+        cur_lr = self.optimizer.param_groups[0]['lr']
+        if self.cur_phase == PruningPhase.admm:
+            self.writer.add_scalar(f'lr/admm_lr_rho{self.current_rho}', cur_lr, global_step=my_step)
+        else:
+            self.writer.add_scalar('lr/retrain_lr', cur_lr, global_step=my_step)
+
         if training_steps % args.gradient_accumulation_steps == 0:
             global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
 
@@ -353,6 +377,13 @@ def parse_arguments():
                         default=False,
                         action='store_true',
                         help="Whether to run training.")
+
+    parser.add_argument("--admm_config",
+                        default=None,
+                        type=str,
+                        required=True,
+                        help="The ADMM Pruning config")
+
     args = parser.parse_args()
     return args
 
@@ -742,7 +773,7 @@ def main():
         training_steps = 0
 
         train_loader = infinite_data_loader(checkpoint)
-        prune_manager = ProximalBertPruningManager.from_yaml_file('')
+        prune_manager = ProximalBertPruningManager.from_yaml_file(args.admm_config)
         print(prune_manager.to_json_string())
         prune_manager.setup_learner(model, optimizer, train_loader)
         prune_manager.admm_prune()
