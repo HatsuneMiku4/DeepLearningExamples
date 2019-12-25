@@ -99,7 +99,6 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.current_rho = None
-        self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
 
     def __del__(self):
         self.writer.export_scalars_to_json(self.tensorboard_json_path)
@@ -111,6 +110,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             if Path(self.tensorboard_logdir).is_dir() and self.overwrite:
                 shutil.rmtree(self.tensorboard_logdir)
             Path(self.tensorboard_logdir).mkdir(exist_ok=False, parents=True)
+
+        self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
 
         self.update_freq *= args.gradient_accumulation_steps
         self.admm_steps *= args.gradient_accumulation_steps
@@ -191,6 +192,10 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             self.save_checkpoint_prune(self.model, rho=current_rho)
         torch.distributed.barrier()
 
+    def _log_scalar(self, *args, **kwargs):
+        if not is_main_process(): return
+        self.writer.add_scalar(*args, **kwargs)
+
     def _train_one_step(self, my_step):
         global args, average_loss, global_step, training_steps, device, overflow_buf, most_recent_ckpts_paths, files
         epoch, f_id, step, batch = next(self.train_loader)
@@ -203,14 +208,15 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         if args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu.
 
+
         if self.cur_phase == PruningPhase.admm:
-            self.writer.add_scalar(f'loss/admm_orig_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
+            self._log_scalar(f'loss/admm_orig_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
         else:
-            self.writer.add_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
+            self._log_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
 
         if self.cur_phase == PruningPhase.admm:
             loss = self.append_admm_loss(loss, my_step)
-            self.writer.add_scalar(f'loss/admm_mixed_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
+            self._log_scalar(f'loss/admm_mixed_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
 
         divisor = args.gradient_accumulation_steps
         if args.gradient_accumulation_steps > 1:
@@ -228,9 +234,9 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.update_lr(my_step)
         cur_lr = self.optimizer.param_groups[0]['lr']
         if self.cur_phase == PruningPhase.admm:
-            self.writer.add_scalar(f'lr/admm_lr_rho{self.current_rho}', cur_lr, global_step=my_step)
+            self._log_scalar(f'lr/admm_lr_rho{self.current_rho}', cur_lr, global_step=my_step)
         else:
-            self.writer.add_scalar('lr/retrain_lr', cur_lr, global_step=my_step)
+            self._log_scalar('lr/retrain_lr', cur_lr, global_step=my_step)
 
         if training_steps % args.gradient_accumulation_steps == 0:
             global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
