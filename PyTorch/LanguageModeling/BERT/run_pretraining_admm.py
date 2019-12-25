@@ -123,6 +123,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.optimizer = optimizer
         self.train_loader = train_loader
 
+        torch.distributed.barrier()
+
     def update_lr(self, step):
         if self.cur_phase == PruningPhase.admm:
             new_lr = admm.admm_adjust_learning_rate_per_step(
