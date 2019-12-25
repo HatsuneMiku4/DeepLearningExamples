@@ -108,7 +108,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     def setup_learner(self, model, optimizer, train_loader):
         if is_main_process():
             if Path(self.tensorboard_logdir).is_dir() and self.overwrite:
-                shutil.rmtree(self.tensorboard_logdir)
+                shutil.rmtree(self.tensorboard_logdir, ignore_errors=True)
             Path(self.tensorboard_logdir).mkdir(exist_ok=False, parents=True)
 
         self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
@@ -136,7 +136,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         else: pass
 
     # noinspection PyMethodOverriding
-    def append_admm_loss(self, loss, step):
+    def append_admm_loss(self, loss, step, return_losses=False):
         assert self.cur_phase == PruningPhase.admm
         args = argparse.Namespace(
             admm=True, verbose=False,
@@ -148,7 +148,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         admm.admm_update_per_step(args, self.admm, self.model, step)
         losses = admm.append_admm_loss(args, self.admm, self.model, loss)
         loss, admm_loss, mixed_loss = losses
-        return mixed_loss
+        if not return_losses: return mixed_loss
+        else: return losses
 
     def masked_retrain(self):
         self.retrain()
@@ -217,7 +218,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             self._log_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
 
         if self.cur_phase == PruningPhase.admm:
-            loss = self.append_admm_loss(loss, my_step)
+            orig_loss, admm_loss, loss = self.append_admm_loss(loss, my_step, return_losses=True)
+            self._log_scalar(f'loss/admm_admm_loss_rho{self.current_rho}', sum(admm_loss.values()).item(), global_step=my_step)
             self._log_scalar(f'loss/admm_mixed_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
 
         divisor = args.gradient_accumulation_steps
