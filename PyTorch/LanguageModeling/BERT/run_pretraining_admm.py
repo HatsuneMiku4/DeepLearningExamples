@@ -99,10 +99,12 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.current_rho = None
+        self.writer = None
 
     def __del__(self):
-        self.writer.export_scalars_to_json(self.tensorboard_json_path)
-        self.writer.close()
+        if self.writer:
+            self.writer.export_scalars_to_json(self.tensorboard_json_path)
+            self.writer.close()
 
     # noinspection PyMethodOverriding
     def setup_learner(self, model, optimizer, train_loader):
