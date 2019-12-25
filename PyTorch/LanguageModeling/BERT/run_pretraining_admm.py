@@ -51,6 +51,7 @@ import sys
 sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm
 from tensorboardX import SummaryWriter
+from args_to_yaml import *
 
 
 global_step = 0
@@ -750,9 +751,20 @@ def infinite_data_loader(checkpoint):
         epoch += 1
 
 
+def parse_my_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config_yaml', type=str, required=True, help="yaml configuration file for pretraining")
+    parser.add_argument("--local_rank", type=int, default=-1, help="local_rank for distributed training on gpus")
+    args = parser.parse_known_args()[0]
+    return args.config_yaml, args.local_rank
+
+
 def main():
     global global_step, average_loss, training_steps, most_recent_ckpts_paths, device
-    args = parse_arguments()
+    config_yaml, local_rank = parse_my_arguments()
+    args = args_from_yaml(config_yaml)
+    args.local_rank = local_rank
+    # args = parse_arguments()
     device, args = setup_training(args)
 
     model, optimizer, checkpoint, global_step = prepare_model_and_optimizer(args, device)

@@ -25,3 +25,4 @@ resume_step: -1
 seed: 42
 train_batch_size: 4096
 warmup_proportion: 0.128
+admm_config: bert_base_pretrain_proximal_admm_config.example.yaml
