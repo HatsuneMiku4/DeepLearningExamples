@@ -110,10 +110,10 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     def setup_learner(self, model, optimizer, train_loader):
         if is_main_process():
             if Path(self.tensorboard_logdir).is_dir() and self.overwrite:
-                shutil.rmtree(self.tensorboard_logdir, ignore_errors=True)
-            Path(self.tensorboard_logdir).mkdir(exist_ok=False, parents=True)
-
-        self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
+                shutil.rmtree(self.tensorboard_logdir)
+            # Path(self.tensorboard_logdir).mkdir(exist_ok=False, parents=True)
+            self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
+        torch.distributed.barrier()
 
         self.update_freq *= args.gradient_accumulation_steps
         self.admm_steps *= args.gradient_accumulation_steps
@@ -124,8 +124,6 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.model = model
         self.optimizer = optimizer
         self.train_loader = train_loader
-
-        torch.distributed.barrier()
 
     def update_lr(self, step):
         if self.cur_phase == PruningPhase.admm:
