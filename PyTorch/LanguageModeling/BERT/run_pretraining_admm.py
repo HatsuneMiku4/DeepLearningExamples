@@ -33,6 +33,7 @@ import h5py
 import numpy as np
 from tqdm import tqdm
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, Dataset
 
 from apex import amp
@@ -52,7 +53,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import sys
 sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
-from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm
+from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity
 from tensorboardX import SummaryWriter
 from args_to_yaml import *
 
@@ -145,6 +146,19 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         losses = admm.append_admm_loss(args, self.admm, self.model, loss)
         loss, admm_loss, mixed_loss = losses
         return mixed_loss
+
+    def masked_retrain(self):
+        self.retrain()
+        self._load_ckpt_masked_retrain()
+        self._init_admm(rho=self.initial_rho)
+        args = argparse.Namespace(sparsity_type=self.sparsity_type)
+        if isinstance(self.model, nn.DataParallel):
+            model = self.model.module
+        else: model = self.model
+        admm.hard_prune(args, self.admm, model)
+        self._train_masked_retrain()
+        if is_main_process():
+            test_irregular_sparsity(self.model)
 
     def _half_admm_buffers(self):
         for d in [self.admm.ADMM_X, self.admm.ADMM_A, self.admm.ADMM_Y, self.admm.ADMM_R]:
