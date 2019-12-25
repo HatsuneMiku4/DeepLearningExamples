@@ -21,14 +21,17 @@ from __future__ import division
 from __future__ import print_function
 
 # ==================
+import shutil
 import time
 import logging
 import argparse
 import random
-import h5py
-from tqdm import tqdm
 import os
+from pathlib import Path
+
+import h5py
 import numpy as np
+from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, RandomSampler, Dataset
 
@@ -86,6 +89,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         'admm_ckpt_steps': 500,
         'retrain_ckpt_steps': 500,
 
+        'fp16': True,
         'tensorboard_logdir': '.',
         'tensorboard_json_path': './all_scalars.json',
     }
@@ -102,6 +106,17 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
 
     # noinspection PyMethodOverriding
     def setup_learner(self, model, optimizer, train_loader):
+        if is_main_process():
+            if Path(self.tensorboard_logdir).is_dir() and self.overwrite:
+                shutil.rmtree(self.tensorboard_logdir)
+            Path(self.tensorboard_logdir).mkdir(exist_ok=False, parents=True)
+
+        self.update_freq *= args.gradient_accumulation_steps
+        self.admm_steps *= args.gradient_accumulation_steps
+        self.retrain_steps *= args.gradient_accumulation_steps
+        self.admm_ckpt_steps *= args.gradient_accumulation_steps
+        self.retrain_ckpt_steps *= args.gradient_accumulation_steps
+
         self.model = model
         self.optimizer = optimizer
         self.train_loader = train_loader
@@ -131,23 +146,36 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         loss, admm_loss, mixed_loss = losses
         return mixed_loss
 
+    def _half_admm_buffers(self):
+        for d in [self.admm.ADMM_X, self.admm.ADMM_A, self.admm.ADMM_Y, self.admm.ADMM_R]:
+            for k, v in d.items():
+                d[k] = v.half()
+
+    def _init_admm(self, rho):
+        self.admm = admm.ADMM(self.model, file_name=self.config_file, rho=rho)
+        # if self.fp16: self._half_admm_buffers()
+
     def _train_masked_retrain(self):
         self.current_rho = None
         self.setup_masking_hooks()
         for step in range(self.retrain_steps):
             self._train_one_step(step)
-            if step % self.retrain_ckpt_steps == 0:
+            if step % self.retrain_ckpt_steps == 0 and is_main_process():
                 self.save_checkpoint_retrain(self.model, step=step)
-        self.save_checkpoint_retrain(self.model, step=self.retrain_steps)
+        if is_main_process():
+            self.save_checkpoint_retrain(self.model, step=self.retrain_steps)
+        torch.distributed.barrier()
         self.remove_masking_hooks()
 
     def _train_admm_prune(self, current_rho):
         self.current_rho = current_rho
         for step in range(self.admm_steps):
             self._train_one_step(step)
-            if step % self.admm_ckpt_steps == 0:
+            if step % self.admm_ckpt_steps == 0 and is_main_process():
                 self.save_checkpoint_prune(self.model, rho=current_rho, step=step)
-        self.save_checkpoint_prune(self.model, rho=current_rho)
+        if is_main_process():
+            self.save_checkpoint_prune(self.model, rho=current_rho)
+        torch.distributed.barrier()
 
     def _train_one_step(self, my_step):
         global args, average_loss, global_step, training_steps, device, overflow_buf, most_recent_ckpts_paths, files
@@ -177,8 +205,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
                 loss = loss / args.gradient_accumulation_steps
                 divisor = 1.0
         if args.fp16:
-            with amp.scale_loss(loss, self.optimizer,
-                                delay_overflow_check=args.allreduce_post_accumulation) as scaled_loss:
+            with amp.scale_loss(loss, self.optimizer, delay_overflow_check=args.allreduce_post_accumulation) as scaled_loss:
                 scaled_loss.backward()
         else:
             loss.backward()
@@ -436,8 +463,8 @@ def prepare_model_and_optimizer(args, device):
     config = BertConfig.from_json_file(args.config_file)
 
     # Padding for divisibility by 8
-    if config.vocab_size % 8 != 0:
-        config.vocab_size += 8 - (config.vocab_size % 8)
+    # if config.vocab_size % 8 != 0:
+    #     config.vocab_size += 8 - (config.vocab_size % 8)
     model = BertForPreTraining(config)
 
     checkpoint = None
@@ -478,7 +505,6 @@ def prepare_model_and_optimizer(args, device):
                          warmup=args.warmup_proportion,
                          t_total=args.max_steps)
     if args.fp16:
-
         if args.loss_scale == 0:
             # optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
             model, optimizer = amp.initialize(model, optimizer, opt_level="O2", loss_scale="dynamic",
@@ -661,6 +687,7 @@ def train_one_file(model, optimizer, train_dataloader, f_id):
 
 
 def setup_files(epoch, checkpoint):
+    global args
     if not args.resume_from_checkpoint or epoch > 0 or args.phase2:
         files = [os.path.join(args.input_dir, f) for f in os.listdir(args.input_dir) if
                  os.path.isfile(os.path.join(args.input_dir, f)) and 'training' in f]
@@ -753,14 +780,14 @@ def infinite_data_loader(checkpoint):
 
 def parse_my_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('config_yaml', type=str, required=True, help="yaml configuration file for pretraining")
+    parser.add_argument('config_yaml', type=str, help="yaml configuration file for pretraining")
     parser.add_argument("--local_rank", type=int, default=-1, help="local_rank for distributed training on gpus")
     args = parser.parse_known_args()[0]
     return args.config_yaml, args.local_rank
 
 
 def main():
-    global global_step, average_loss, training_steps, most_recent_ckpts_paths, device
+    global global_step, average_loss, training_steps, most_recent_ckpts_paths, device, args
     config_yaml, local_rank = parse_my_arguments()
     args = args_from_yaml(config_yaml)
     args.local_rank = local_rank
@@ -786,7 +813,7 @@ def main():
 
         train_loader = infinite_data_loader(checkpoint)
         prune_manager = ProximalBertPruningManager.from_yaml_file(args.admm_config)
-        print(prune_manager.to_json_string())
+        if is_main_process(): print(prune_manager.to_json_string())
         prune_manager.setup_learner(model, optimizer, train_loader)
         prune_manager.admm_prune()
         prune_manager.masked_retrain()

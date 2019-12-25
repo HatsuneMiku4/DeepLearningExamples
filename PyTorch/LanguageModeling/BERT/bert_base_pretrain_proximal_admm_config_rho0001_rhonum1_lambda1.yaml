@@ -7,7 +7,7 @@ rho_num: 1
 proximal_lambda: 1
 update_freq: 100
 lr: 0.004
-admm_steps: 3000
+admm_steps: 600
 retrain_steps: 3000
 
 sparsity_type: threshold
@@ -15,9 +15,10 @@ arch: bert_base_uncased
 optimizer_type: NVLAMB
 dataset_type: EnwikiBookcorpus
 save_dir: test_pretrain_admm
-overwrite: False
+overwrite: True
 admm_ckpt_steps: 500
 retrain_ckpt_steps: 500
 
+fp16: True
 tensorboard_logdir: tb_logs
 tensorboard_json_path: tb_logs/all_scalars.json
