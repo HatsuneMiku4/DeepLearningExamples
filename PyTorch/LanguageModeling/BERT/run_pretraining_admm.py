@@ -67,6 +67,28 @@ device = None
 files = None
 args = None
 
+import matplotlib.pyplot as plt
+
+
+def plot_grad_flow(named_parameters, to_file=None):
+    plt.clf()
+    ave_grads = []
+    layers = []
+    for n, p in named_parameters:
+        if p.requires_grad and "bias" not in n:
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean())
+    plt.plot(ave_grads, alpha=0.3, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
+    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(xmin=0, xmax=len(ave_grads))
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    if to_file:
+        plt.savefig(to_file, dpi=200)
+
 
 class ProximalBertPruningManager(ProximalADMMPruningManager):
     ATTRIBUTES = {
@@ -76,6 +98,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         'initial_rho': 0.0001,
         'rho_num': 1,
         'proximal_lambda': 1,
+        'cross_x': 1,
+        'cross_f': 1,
         'update_freq': 100,  # steps
         'lr': None,
         'admm_steps': 3000,
@@ -143,6 +167,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             admm_update_freq=self.update_freq,
             lamda=self.proximal_lambda,
             sparsity_type=self.sparsity_type,
+            cross_x=self.cross_x,
+            cross_f=self.cross_f,
         )
         admm.proximal_update_per_step(args, self.admm, self.model, step, writer=None)
         admm.admm_update_per_step(args, self.admm, self.model, step)
@@ -234,6 +260,12 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         else:
             loss.backward()
         average_loss += loss.item()
+
+        if my_step % 500 == 0:
+            try:
+                plot_grad_flow(self.model.named_parameters(), f'grad_step{my_step}.png')
+            except:
+                pass
 
         self.update_lr(my_step)
         cur_lr = self.optimizer.param_groups[0]['lr']

@@ -5,6 +5,8 @@ init_weights_path: nvidia-bert-base-uncased-pytorch_model.bin
 initial_rho: 0.0001
 rho_num: 1
 proximal_lambda: 0.001
+cross_x: 1
+cross_f: 1
 update_freq: 300 # 30
 lr: 0.004
 admm_steps: 3000  # 300
