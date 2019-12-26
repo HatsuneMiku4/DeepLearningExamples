@@ -97,7 +97,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
 
         'initial_rho': 0.0001,
         'rho_num': 1,
-        'proximal_lambda': 1,
+        'initial_lambda': 1,
         'cross_x': 1,
         'cross_f': 1,
         'update_freq': 100,  # steps
@@ -165,7 +165,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         args = argparse.Namespace(
             admm=True, verbose=False,
             admm_update_freq=self.update_freq,
-            lamda=self.proximal_lambda,
+            lamda=self.initial_lambda,
             sparsity_type=self.sparsity_type,
             cross_x=self.cross_x,
             cross_f=self.cross_f,
@@ -195,8 +195,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             for k, v in d.items():
                 d[k] = v.half()
 
-    def _init_admm(self, rho):
-        self.admm = admm.ADMM(self.model, file_name=self.config_file, rho=rho)
+    def _init_admm(self, rho, lamda):
+        self.admm = admm.ADMM(self.model, file_name=self.config_file, rho=rho, lamda=lamda)
         # if self.fp16: self._half_admm_buffers()
 
     def _train_masked_retrain(self):
