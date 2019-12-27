@@ -32,6 +32,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 from tqdm import tqdm
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, Dataset
@@ -86,8 +87,8 @@ def plot_grad_flow(named_parameters, to_file=None):
     plt.ylabel("average gradient")
     plt.title("Gradient flow")
     plt.grid(True)
-    if to_file:
-        plt.savefig(to_file, dpi=200)
+    if to_file: plt.savefig(to_file, dpi=200)
+    else: return plt.gcf()
 
 
 class ProximalBertPruningManager(ProximalADMMPruningManager):
@@ -129,6 +130,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         if self.writer:
             self.writer.export_scalars_to_json(self.tensorboard_json_path)
             self.writer.close()
+        if getattr(self, 'forward_handles', None):
+            self._remove_forward_hooks()
 
     # noinspection PyMethodOverriding
     def setup_learner(self, model, optimizer, train_loader):
@@ -148,6 +151,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.model = model
         self.optimizer = optimizer
         self.train_loader = train_loader
+
+        self._setup_forward_hooks()
 
     def update_lr(self, step):
         if self.cur_phase == PruningPhase.admm:
@@ -199,6 +204,50 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.admm = admm.ADMM(self.model, file_name=self.config_file, rho=rho, lamda=lamda)
         # if self.fp16: self._half_admm_buffers()
 
+    def _dump_state_dict(self):
+        return {
+            'model': self.model.state_dict(),
+            'admm': {
+                'admm_x': self.admm.ADMM_X,
+                'admm_y': self.admm.ADMM_Y,
+                'admm_a': self.admm.ADMM_A,
+                'admm_r': self.admm.ADMM_R,
+                'rhos': self.admm.rhos,
+                'lamdas': self.admm.lamdas,
+                'rho': self.admm.rho,
+                'lambda': self.admm.lamda,
+            },
+            'config': self.to_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'amp': amp.state_dict(),
+        }
+
+    def _load_state_dict(self, state_dict):
+        self.model.load_state_dict(state_dict['model'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        self._load_admm_state_dict(state_dict['admm'])
+        amp.load_state_dict(state_dict['amp'])
+
+    def _load_admm_state_dict(self, state_dict):
+        self.admm.ADMM_X = state_dict['admm_x']
+        self.admm.ADMM_Y = state_dict['admm_y']
+        self.admm.ADMM_A = state_dict['admm_a']
+        self.admm.ADMM_R = state_dict['admm_r']
+        self.admm.rhos = state_dict['rhos']
+        self.admm.lamdas = state_dict['lamdas']
+        self.admm.rho = state_dict['rho']
+        self.admm.lamda = state_dict['lamda']
+
+    def _save_checkpoint_prune(self, rho, **extra):  # TODO
+        model_path = self._format_ckpt_fname(rho=rho, **extra)
+        print(f"Saving model to {model_path}...")
+        torch.save(self._dump_state_dict(), model_path)
+
+    def _save_checkpoint_retrain(self, **extra):  # TODO
+        model_path = self._format_ckpt_fname(**extra)
+        print(f"Saving model to {model_path}...")
+        torch.save(self._dump_state_dict(), model_path)
+
     def _train_masked_retrain(self):
         self.current_rho = None
         self.setup_masking_hooks()
@@ -225,6 +274,65 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         if not is_main_process(): return
         self.writer.add_scalar(*args, **kwargs)
 
+    def _log_histogram(self, *args, **kwargs):
+        if not is_main_process(): return
+        self.writer.add_histogram(*args, **kwargs)
+
+    def _log_figure(self, *args, **kwargs):
+        if not is_main_process(): return
+        self.writer.add_figure(*args, **kwargs)
+
+    def _calc_avg_grads(self):
+        if isinstance(self.model, nn.DataParallel):
+            model = self.model.module
+        else: model = self.model
+        avg_grads = []
+        for n, p in model.named_parameters():
+            if p.requires_grad and 'bias' not in n:
+                avg_grads.append(p.grad.abs().mean().item())
+        return np.array(avg_grads)
+
+    def _plot_avg_grads(self):
+        return plot_grad_flow(self.model.named_parameters())
+
+    def _plot_avg_output(self):
+        # print(self.forward_magnitudes)
+        pd.Series(self.forward_magnitudes).plot()
+        return plt.gcf()
+
+    def _setup_forward_hooks(self):
+        self.forward_magnitudes = {}
+        self.forward_handles = []
+        for name, module in self.model.named_modules():
+            def hook(module, inputs, outputs, name=name):
+                # if name == "bert.encoder.layer.4.attention.self.softmax":
+                #     print("bert.encoder.layer.4.attention.self.softmax", len(inputs),
+                #           inputs[0].min().item(), inputs[0].max().item(),
+                #           inputs[0].abs().mean().item())
+                try:
+                    if is_main_process():
+                        pass
+                        # try:
+                        #     print(name, len(inputs),
+                        #           inputs[0].min().item(), inputs[0].max().item(),
+                        #           inputs[0].abs().mean().item(), end=' ')
+                        # except: print(name, end=' ')
+                        # print('->', outputs[0].min().item(), outputs[0].max().item(),
+                        #       outputs[0].abs().mean().item())
+                except:
+                    print('***error:', name)
+                # try:
+                #     if isinstance(inputs, (list, tuple)): inputs = inputs[0]
+                #     self.forward_magnitudes[name] = inputs.abs().mean().item()
+                # except: pass
+                # if isinstance(outputs, (list, tuple)): outputs = outputs[0]
+                # self.forward_magnitudes[name] = outputs.abs().mean().item()
+            self.forward_handles.append(module.register_forward_hook(hook))
+
+    def _remove_forward_hooks(self):
+        for handle in self.forward_handles:
+            handle.remove()
+
     def _train_one_step(self, my_step):
         global args, average_loss, global_step, training_steps, device, overflow_buf, most_recent_ckpts_paths, files
         epoch, f_id, step, batch = next(self.train_loader)
@@ -237,7 +345,6 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         if args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu.
 
-
         if self.cur_phase == PruningPhase.admm:
             self._log_scalar(f'loss/admm_orig_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
         else:
@@ -245,6 +352,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
 
         if self.cur_phase == PruningPhase.admm:
             orig_loss, admm_loss, loss = self.append_admm_loss(loss, my_step, return_losses=True)
+            # print("***", [loss.item() for loss in admm_loss.values()])  # [nan, nan, nan...]
+            # print("***", sum(admm_loss.values()).item())  # nan
             self._log_scalar(f'loss/admm_admm_loss_rho{self.current_rho}', sum(admm_loss.values()).item(), global_step=my_step)
             self._log_scalar(f'loss/admm_mixed_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
 
@@ -261,14 +370,17 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             loss.backward()
         average_loss += loss.item()
 
-        if my_step % 500 == 0:
-            try:
-                plot_grad_flow(self.model.named_parameters(), f'grad_step{my_step}.png')
-            except:
-                pass
+        # if my_step % 500 == 0:
+        #     self._log_figure('output/barplot', self._plot_avg_output(), global_step=my_step)
+        #
+        # if my_step % 2000 == 0:
+        #     # plot_grad_flow(self.model.named_parameters(), f'grad_step{my_step}.png')
+        #     print(self._calc_avg_grads())
+        #     self._log_histogram('gradient/grad_hist', self._calc_avg_grads(), global_step=my_step)
+        #     self._log_figure('gradient/grad_barplot', self._plot_avg_grads(), global_step=my_step)
 
         self.update_lr(my_step)
-        cur_lr = self.optimizer.param_groups[0]['lr']
+        cur_lr = self.optimizer.manual_lr
         if self.cur_phase == PruningPhase.admm:
             self._log_scalar(f'lr/admm_lr_rho{self.current_rho}', cur_lr, global_step=my_step)
         else:
@@ -285,7 +397,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
                 print("Step:{} Average Loss = {} Step Loss = {} LR {}".format(
                     global_step, average_loss / (args.log_freq * divisor),
                     loss.item() * args.gradient_accumulation_steps / divisor,
-                    self.optimizer.param_groups[0]['lr']))
+                    self.optimizer.manual_lr))  # self.optimizer.param_groups[0]['lr']))
             average_loss = 0
 
         if global_step >= args.max_steps or training_steps % (
@@ -561,13 +673,16 @@ def prepare_model_and_optimizer(args, device):
                          warmup=args.warmup_proportion,
                          t_total=args.max_steps)
     if args.fp16:
+        opt_level = "O2"  # originally O2
         if args.loss_scale == 0:
             # optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
-            model, optimizer = amp.initialize(model, optimizer, opt_level="O2", loss_scale="dynamic",
-                                              master_weights=False if args.accumulate_into_fp16 else True)
+            if opt_level == "O1": master_weights = None
+            else: master_weights = False if args.accumulate_into_fp16 else True
+            model, optimizer = amp.initialize(model, optimizer, opt_level=opt_level, loss_scale="dynamic",
+                                              master_weights=master_weights)
         else:
             # optimizer = FP16_Optimizer(optimizer, static_loss_scale=args.loss_scale)
-            model, optimizer = amp.initialize(model, optimizer, opt_level="O2", loss_scale=args.loss_scale,
+            model, optimizer = amp.initialize(model, optimizer, opt_level=opt_level, loss_scale=args.loss_scale,
                                               master_weights=False if args.accumulate_into_fp16 else True)
         amp._amp_state.loss_scalers[0]._loss_scale = 2 ** 20
 

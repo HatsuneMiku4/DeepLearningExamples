@@ -389,6 +389,10 @@ class BertSelfAttention(nn.Module):
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer)
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        # print("***", attention_scores.min().item(), attention_scores.max().item(),
+        #       attention_scores.abs().mean().item())
+        # print("***", attention_mask.min().item(), attention_mask.max().item(),
+        #       attention_mask.abs().mean().item())
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask
 
@@ -427,6 +431,7 @@ class BertAttention(nn.Module):
         self.output = BertSelfOutput(config)
 
     def forward(self, input_tensor, attention_mask):
+        # print("***", attention_mask.min().item(), attention_mask.max().item())
         self_output = self.self(input_tensor, attention_mask)
         attention_output = self.output(self_output, input_tensor)
         return attention_output
@@ -841,6 +846,7 @@ class BertModel(BertPreTrainedModel):
         # effectively the same as removing these entirely.
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        # print("***", extended_attention_mask.flatten()[:10])
 
         embedding_output = self.embeddings(input_ids, token_type_ids)
         encoded_layers = self.encoder(embedding_output,
