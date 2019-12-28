@@ -389,10 +389,10 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         if training_steps % args.gradient_accumulation_steps == 0:
             global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
 
-        if global_step >= args.max_steps:
-            print_final_loss(training_steps, average_loss, divisor)
+        # if global_step >= args.max_steps:
+        #     print_final_loss(training_steps, average_loss, divisor)
 
-        elif training_steps % (args.log_freq * args.gradient_accumulation_steps) == 0:
+        if training_steps % (args.log_freq * args.gradient_accumulation_steps) == 0:
             if is_main_process():
                 print("Step:{} Average Loss = {} Step Loss = {} LR {}".format(
                     global_step, average_loss / (args.log_freq * divisor),
@@ -400,9 +400,9 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
                     self.optimizer.manual_lr))  # self.optimizer.param_groups[0]['lr']))
             average_loss = 0
 
-        if global_step >= args.max_steps or training_steps % (
-                args.num_steps_per_checkpoint * args.gradient_accumulation_steps) == 0:
-            save_checkpoint(self.model, self.optimizer, global_step, files, f_id, most_recent_ckpts_paths)
+        # if global_step >= args.max_steps or training_steps % (
+        #         args.num_steps_per_checkpoint * args.gradient_accumulation_steps) == 0:
+        #     save_checkpoint(self.model, self.optimizer, global_step, files, f_id, most_recent_ckpts_paths)
 
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -935,10 +935,10 @@ def infinite_data_loader(checkpoint):
                 training_steps += 1
                 yield epoch, f_id, step, batch
 
-            if global_step >= args.max_steps:
-                del train_dataloader
-                # thread.join()
-                return args  # raise StopIteration
+            # if global_step >= args.max_steps:
+            #     del train_dataloader
+            #     # thread.join()
+            #     return args  # raise StopIteration
 
             del train_dataloader
             # thread.join()
