@@ -175,7 +175,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             cross_x=self.cross_x,
             cross_f=self.cross_f,
         )
-        admm.proximal_update_per_step(args, self.admm, self.model, step, writer=None)
+        writer = self.writer if is_main_process() else None
+        admm.proximal_update_per_step(args, self.admm, self.model, step, writer=writer)
         admm.admm_update_per_step(args, self.admm, self.model, step)
         losses = admm.append_admm_loss(args, self.admm, self.model, loss)
         loss, admm_loss, mixed_loss = losses
