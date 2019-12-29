@@ -860,6 +860,26 @@ class BertModel(BertPreTrainedModel):
         return encoded_layers, pooled_output
 
 
+def accuracy(output, target, topk=(1,)):
+    """
+    https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    Computes the accuracy over the k top predictions for the specified values of k
+    """
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res if len(res) > 1 else res[0]
+
+
 class BertForPreTraining(BertPreTrainedModel):
     """BERT model with pre-training heads.
     This module comprises the BERT model followed by the two pre-training heads:
@@ -919,7 +939,7 @@ class BertForPreTraining(BertPreTrainedModel):
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None,
-                next_sentence_label=None, checkpoint_activations=False):
+                next_sentence_label=None, checkpoint_activations=False, return_acc=False):
         sequence_output, pooled_output = self.bert(input_ids, token_type_ids, attention_mask,
                                                    output_all_encoded_layers=False,
                                                    checkpoint_activations=checkpoint_activations)
@@ -927,11 +947,17 @@ class BertForPreTraining(BertPreTrainedModel):
 
         if masked_lm_labels is not None and next_sentence_label is not None:
             loss_fct = CrossEntropyLoss(ignore_index=-1)
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
-            next_sentence_loss = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
+            prediction_scores = prediction_scores.view(-1, self.config.vocab_size)
+            seq_relationship_score = seq_relationship_score.view(-1, 2)
+            masked_lm_loss = loss_fct(prediction_scores, masked_lm_labels.view(-1))
+            next_sentence_loss = loss_fct(seq_relationship_score, next_sentence_label.view(-1))
             # print("loss is {} {}".format(masked_lm_loss, next_sentence_loss))
             total_loss = masked_lm_loss + next_sentence_loss
-            return total_loss
+            if not return_acc: return total_loss
+            else:
+                masked_lm_acc = accuracy(prediction_scores, masked_lm_labels.view(-1))
+                next_sentence_acc = accuracy(seq_relationship_score, next_sentence_label.view(-1))
+                return total_loss, masked_lm_acc, next_sentence_acc
         else:
             return prediction_scores, seq_relationship_score
 

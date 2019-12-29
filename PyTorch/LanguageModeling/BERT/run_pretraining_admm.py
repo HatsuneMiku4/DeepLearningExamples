@@ -168,7 +168,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     def append_admm_loss(self, loss, step, return_losses=False):
         assert self.cur_phase == PruningPhase.admm
         args = argparse.Namespace(
-            admm=True, verbose=False,
+            admm=True, verbose=True,
             admm_update_freq=self.update_freq,
             lamda=self.initial_lambda,
             sparsity_type=self.sparsity_type,
@@ -340,16 +340,21 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
 
         batch = [t.to(device) for t in batch]
         input_ids, segment_ids, input_mask, masked_lm_labels, next_sentence_labels = batch
-        loss = self.model(input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_mask,
-                          masked_lm_labels=masked_lm_labels, next_sentence_label=next_sentence_labels,
-                          checkpoint_activations=args.checkpoint_activations)
+        loss, masked_lm_acc, next_sentence_acc = self.model(
+            input_ids=input_ids, token_type_ids=segment_ids, attention_mask=input_mask,
+            masked_lm_labels=masked_lm_labels, next_sentence_label=next_sentence_labels,
+            checkpoint_activations=args.checkpoint_activations, return_acc=True)
         if args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu.
 
         if self.cur_phase == PruningPhase.admm:
             self._log_scalar(f'loss/admm_orig_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
+            self._log_scalar(f'acc/admm_masked_lm_acc_rho{self.current_rho}', masked_lm_acc.item(), global_step=my_step)
+            self._log_scalar(f'acc/admm_next_sentence_acc_rho{self.current_rho}', next_sentence_acc.item(), global_step=my_step)
         else:
             self._log_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
+            self._log_scalar('acc/retrain_masked_lm_acc', masked_lm_acc.item(), global_step=my_step)
+            self._log_scalar('acc/retrain_next_sentence_acc', next_sentence_acc.item(), global_step=my_step)
 
         if self.cur_phase == PruningPhase.admm:
             orig_loss, admm_loss, loss = self.append_admm_loss(loss, my_step, return_losses=True)
