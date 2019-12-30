@@ -162,7 +162,9 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
                 )
             )
             self.optimizer.set_lr(new_lr)
-        else: pass
+        else:
+            new_lr = self.lr * ((1 - step / self.retrain_steps) ** 0.5)
+            self.optimizer.set_lr(new_lr)
 
     # noinspection PyMethodOverriding
     def append_admm_loss(self, loss, step, return_losses=False):
@@ -186,12 +188,14 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     def masked_retrain(self):
         self.retrain()
         self._load_ckpt_masked_retrain()
-        self._init_admm(rho=self.initial_rho)
+        self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
         args = argparse.Namespace(sparsity_type=self.sparsity_type)
         if isinstance(self.model, nn.DataParallel):
             model = self.model.module
         else: model = self.model
         admm.hard_prune(args, self.admm, model)
+        if is_main_process():
+            test_irregular_sparsity(self.model)
         self._train_masked_retrain()
         if is_main_process():
             test_irregular_sparsity(self.model)
@@ -992,7 +996,7 @@ def main():
         prune_manager = ProximalBertPruningManager.from_yaml_file(args.admm_config)
         if is_main_process(): print(prune_manager.to_json_string())
         prune_manager.setup_learner(model, optimizer, train_loader)
-        prune_manager.admm_prune()
+        # prune_manager.admm_prune()
         prune_manager.masked_retrain()
 
 
