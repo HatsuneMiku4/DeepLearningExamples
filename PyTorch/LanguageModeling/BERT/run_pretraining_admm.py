@@ -144,13 +144,13 @@ class CheckpointMixin:
 
     def _load_model(self, state_dict):
         try:
-            self.model.load_state_dict(state_dict['model'])
+            self.model.load_state_dict(state_dict)
         except RuntimeError:
             if isinstance(self.model, nn.DataParallel):
                 model = self.model.module
             else:
                 model = self.model
-            model.load_state_dict(state_dict['model'])
+            model.load_state_dict(state_dict)
 
     def _check_ckpt_config(self, state_dict):
         for k, v in state_dict.items():
