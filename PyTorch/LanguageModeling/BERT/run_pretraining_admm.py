@@ -147,6 +147,13 @@ class CheckpointMixin:
             if getattr(self, k) == v: continue
             raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
 
+    def _load_checkpoint(self, init_path, **extra):
+        model_path = init_path if isinstance(init_path, (str, Path)) else self._format_ckpt_fname(**extra)
+        print(f"Loading model from {model_path}...")
+        state_dict = torch.load(model_path, map_location='cpu')
+        try: self._load_model(state_dict['model'])
+        except: self._load_model(state_dict)
+
     def _load_full_checkpoint(self, ckpt_path):
         state_dict = torch.load(ckpt_path)
         self._check_ckpt_config(state_dict['config'])
