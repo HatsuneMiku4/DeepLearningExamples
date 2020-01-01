@@ -27,15 +27,18 @@ import logging
 import argparse
 import random
 import os
+from itertools import count
 from pathlib import Path
 
 import h5py
 import numpy as np
 from tqdm import tqdm
 import pandas as pd
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, RandomSampler, Dataset
+from tensorboardX import SummaryWriter
 
 from apex import amp
 
@@ -55,7 +58,6 @@ from concurrent.futures import ProcessPoolExecutor
 import sys
 sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity
-from tensorboardX import SummaryWriter
 from args_to_yaml import *
 
 
@@ -67,8 +69,6 @@ most_recent_ckpts_paths = None
 device = None
 files = None
 args = None
-
-import matplotlib.pyplot as plt
 
 
 def plot_grad_flow(named_parameters, to_file=None):
@@ -91,9 +91,171 @@ def plot_grad_flow(named_parameters, to_file=None):
     else: return plt.gcf()
 
 
-class ProximalBertPruningManager(ProximalADMMPruningManager):
+class LoggingMixin:
+    def _log_scalar(self, *args, **kwargs):
+        if not is_main_process(): return
+        self.writer.add_scalar(*args, **kwargs)
+
+    def _log_histogram(self, *args, **kwargs):
+        if not is_main_process(): return
+        self.writer.add_histogram(*args, **kwargs)
+
+    def _log_figure(self, *args, **kwargs):
+        if not is_main_process(): return
+        self.writer.add_figure(*args, **kwargs)
+
+    def _calc_avg_grads(self):
+        if isinstance(self.model, nn.DataParallel):
+            model = self.model.module
+        else: model = self.model
+        avg_grads = []
+        for n, p in model.named_parameters():
+            if p.requires_grad and 'bias' not in n:
+                avg_grads.append(p.grad.abs().mean().item())
+        return np.array(avg_grads)
+
+    def _plot_avg_grads(self):
+        return plot_grad_flow(self.model.named_parameters())
+
+    def _plot_avg_output(self):
+        # print(self.forward_magnitudes)
+        pd.Series(self.forward_magnitudes).plot()
+        return plt.gcf()
+
+
+class CheckpointMixin:
+    @property
+    def state_dict(self):
+        return {
+            'model': self.model.state_dict(),
+            'admm': self.admm.state_dict(),
+            'config': self.to_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'amp': amp.state_dict(),
+            'timer': {
+                'cur_phase': self.cur_phase.name,
+                'cur_rho': self.cur_rho,
+                'cur_step': self.cur_step,
+            },
+        }
+
+    def resume_from(self, ckpt_path):
+        self._load_full_checkpoint(ckpt_path)
+
+    def _load_model(self, state_dict):
+        try:
+            self.model.load_state_dict(state_dict['model'])
+        except RuntimeError:
+            if isinstance(self.model, nn.DataParallel):
+                model = self.model.module
+            else:
+                model = self.model
+            model.load_state_dict(state_dict['model'])
+
+    def _check_ckpt_config(self, state_dict):
+        for k, v in state_dict.items():
+            if getattr(self, k) == v: continue
+            raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
+
+    def _load_checkpoint(self, init_path, **extra):
+        model_path = init_path if isinstance(init_path, (str, Path)) else self._format_ckpt_fname(**extra)
+        print(f"Loading model weights from {model_path}...")
+        self._load_model(torch.load(model_path, map_location='cpu'))
+
+    def _load_full_checkpoint(self, ckpt_path):
+        state_dict = torch.load(ckpt_path)
+        self._check_ckpt_config(state_dict['config'])
+        self._load_model(state_dict['model'])
+        self.admm.load_state_dict(state_dict['admm'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        amp.load_state_dict(state_dict['amp'])
+        self._set_timer_status(state_dict['timer'])
+
+
+class TimerMixin:
+    def _timer_step(self):
+        phase, rho, step = next(self._timer_iter)
+        self.cur_phase = phase
+        self.cur_rho = rho
+        self.cur_step = step
+
+    def _timer_gen(self):
+        phase = PruningPhase.admm
+        for rho_idx in range(self.rho_num):
+            rho = self._calc_current_rho(rho_idx)
+            yield from ((phase, rho, step) for step in range(self.admm_steps))
+        phase = PruningPhase.masked_retrain
+        yield from ((phase, None, step) for step in range(self.retrain_steps))
+        for step in count():
+            print(f'[WARNING] continue retraining after {self.retrain_steps} steps')
+            print(f'Current step: {self.retrain_steps}+{step}. Please check your configuration.')
+
+    def _set_timer_status(self, state_dict):
+        if state_dict['cur_phase'] == PruningPhase.admm.name:
+            self.prune()
+        elif state_dict['cur_phase'] == PruningPhase.masked_retrain.name:
+            self.retrain()
+        else:
+            raise ValueError(f"Invalid cur_phase: {state_dict['cur_phase']}")
+
+        if self.cur_phase == PruningPhase.admm:
+            possible_rhos = [self._calc_current_rho(i) for i in range(self.rho_num)]
+            def check_rho(rho, eps=1e-6): return any(abs(rho-r) < eps for r in possible_rhos)
+            assert check_rho(state_dict['cur_rho']), \
+                f"Invalid cur_rho: {state_dict['cur_rho']}, should be in {possible_rhos}"
+        else:
+            assert state_dict['cur_rho'] is None, \
+                f"Invalid cur_rho: {state_dict['cur_rho']}, should be None"
+        self.cur_rho = state_dict['cur_rho']
+
+        if self.cur_phase == PruningPhase.admm:
+            assert 0 <= state_dict['cur_step'] < self.admm_steps, \
+                f"Invalid cur_step: {state_dict['cur_step']}, should not be in [0, {self.admm_steps})"
+        else:
+            assert 0 <= state_dict['cur_step'] < self.retrain_steps, \
+                f"Invalid cur_step: {state_dict['cur_step']}, should not be in [0, {self.retrain_steps})"
+        self.cur_step = state_dict['cur_step']
+
+
+class DebugMixin:
+    def _setup_forward_hooks(self):
+        self.forward_magnitudes = {}
+        self.forward_handles = []
+        for name, module in self.model.named_modules():
+            def hook(module, inputs, outputs, name=name):
+                # if name == "bert.encoder.layer.4.attention.self.softmax":
+                #     print("bert.encoder.layer.4.attention.self.softmax", len(inputs),
+                #           inputs[0].min().item(), inputs[0].max().item(),
+                #           inputs[0].abs().mean().item())
+                try:
+                    if is_main_process():
+                        pass
+                        # try:
+                        #     print(name, len(inputs),
+                        #           inputs[0].min().item(), inputs[0].max().item(),
+                        #           inputs[0].abs().mean().item(), end=' ')
+                        # except: print(name, end=' ')
+                        # print('->', outputs[0].min().item(), outputs[0].max().item(),
+                        #       outputs[0].abs().mean().item())
+                except:
+                    print('***error:', name)
+                # try:
+                #     if isinstance(inputs, (list, tuple)): inputs = inputs[0]
+                #     self.forward_magnitudes[name] = inputs.abs().mean().item()
+                # except: pass
+                # if isinstance(outputs, (list, tuple)): outputs = outputs[0]
+                # self.forward_magnitudes[name] = outputs.abs().mean().item()
+            self.forward_handles.append(module.register_forward_hook(hook))
+
+    def _remove_forward_hooks(self):
+        for handle in self.forward_handles:
+            handle.remove()
+
+
+class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, DebugMixin,
+                                 ProximalADMMPruningManager):
     ATTRIBUTES = {
-        'config_file': None,
+        'sparsity_config': None,
         'init_weights_path': None,
 
         'initial_rho': 0.0001,
@@ -101,7 +263,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         'initial_lambda': 1,
         'cross_x': 1,
         'cross_f': 1,
-        'update_freq': 100,  # steps
+        'update_freq': 300,  # steps
         'lr': None,
         'admm_steps': 3000,
         'retrain_steps': 3000,
@@ -123,8 +285,11 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
     # noinspection PyMethodOverriding
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.current_rho = None
+        self.cur_rho = None
+        self.cur_step = None
         self.writer = None
+        self._timer_iter = self._timer_gen()
+        self.sparsity_tester = test_irregular_sparsity
 
     def __del__(self):
         if self.writer:
@@ -185,158 +350,74 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         if not return_losses: return mixed_loss
         else: return losses
 
+    def admm_prune(self):
+        resumed = self.cur_phase is not None
+        if self.cur_phase == PruningPhase.masked_retrain:
+            print('ADMM pruning has finished. Skipping admm_prune...')
+            return
+        if self.cur_phase == PruningPhase.admm:
+            init_rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
+        else: init_rho_idx = 0
+        # self.prune()
+        for i in range(init_rho_idx, self.rho_num):
+            if resumed:
+                self._load_ckpt_admm_prune(i)
+                current_rho = self._calc_current_rho(i)
+                current_lamda = self._calc_current_lamda(i)
+                self._init_admm(rho=current_rho, lamda=current_lamda)
+                admm.admm_initialization(argparse.Namespace(
+                    admm=(self.cur_phase == PruningPhase.admm),
+                    sparsity_type=self.sparsity_type,
+                ), self.admm, self.model)  # initialize Z variable
+                resumed = False  # do not skip initialization in next iteration
+            else: current_rho = self.cur_rho
+            self._train_admm_prune(current_rho)
+
     def masked_retrain(self):
-        self.retrain()
-        self._load_ckpt_masked_retrain()
-        self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
-        args = argparse.Namespace(sparsity_type=self.sparsity_type)
-        if isinstance(self.model, nn.DataParallel):
-            model = self.model.module
-        else: model = self.model
-        admm.hard_prune(args, self.admm, model)
+        resumed = self.cur_phase == PruningPhase.masked_retrain
+        if not resumed:
+            # self.retrain()
+            self._load_ckpt_masked_retrain()
+            self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
+            args = argparse.Namespace(sparsity_type=self.sparsity_type)
+            if isinstance(self.model, nn.DataParallel):
+                model = self.model.module
+            else: model = self.model
+            admm.hard_prune(args, self.admm, model)
         if is_main_process():
-            test_irregular_sparsity(self.model)
+            self.sparsity_tester(self.model)
         self._train_masked_retrain()
         if is_main_process():
-            test_irregular_sparsity(self.model)
-
-    def _half_admm_buffers(self):
-        for d in [self.admm.ADMM_X, self.admm.ADMM_A, self.admm.ADMM_Y, self.admm.ADMM_R]:
-            for k, v in d.items():
-                d[k] = v.half()
+            self.sparsity_tester(self.model)
 
     def _init_admm(self, rho, lamda):
-        self.admm = admm.ADMM(self.model, file_name=self.config_file, rho=rho, lamda=lamda)
-        # if self.fp16: self._half_admm_buffers()
-
-    def _dump_state_dict(self):
-        return {
-            'model': self.model.state_dict(),
-            'admm': {
-                'admm_x': self.admm.ADMM_X,
-                'admm_y': self.admm.ADMM_Y,
-                'admm_a': self.admm.ADMM_A,
-                'admm_r': self.admm.ADMM_R,
-                'rhos': self.admm.rhos,
-                'lamdas': self.admm.lamdas,
-                'rho': self.admm.rho,
-                'lambda': self.admm.lamda,
-            },
-            'config': self.to_dict(),
-            'optimizer': self.optimizer.state_dict(),
-            'amp': amp.state_dict(),
-        }
-
-    def _load_state_dict(self, state_dict):
-        self.model.load_state_dict(state_dict['model'])
-        self.optimizer.load_state_dict(state_dict['optimizer'])
-        self._load_admm_state_dict(state_dict['admm'])
-        amp.load_state_dict(state_dict['amp'])
-
-    def _load_admm_state_dict(self, state_dict):
-        self.admm.ADMM_X = state_dict['admm_x']
-        self.admm.ADMM_Y = state_dict['admm_y']
-        self.admm.ADMM_A = state_dict['admm_a']
-        self.admm.ADMM_R = state_dict['admm_r']
-        self.admm.rhos = state_dict['rhos']
-        self.admm.lamdas = state_dict['lamdas']
-        self.admm.rho = state_dict['rho']
-        self.admm.lamda = state_dict['lamda']
-
-    def _save_checkpoint_prune(self, rho, **extra):  # TODO
-        model_path = self._format_ckpt_fname(rho=rho, **extra)
-        print(f"Saving model to {model_path}...")
-        torch.save(self._dump_state_dict(), model_path)
-
-    def _save_checkpoint_retrain(self, **extra):  # TODO
-        model_path = self._format_ckpt_fname(**extra)
-        print(f"Saving model to {model_path}...")
-        torch.save(self._dump_state_dict(), model_path)
+        self.admm = admm.ADMM(self.model, file_name=self.sparsity_config, rho=rho, lamda=lamda)
 
     def _train_masked_retrain(self):
-        self.current_rho = None
+        resumed = self.cur_phase == PruningPhase.masked_retrain
+        init_step = 0 if not resumed else self.cur_step
         self.setup_masking_hooks()
-        for step in range(self.retrain_steps):
+        for step in range(init_step, self.retrain_steps):
+            self._timer_step()
             self._train_one_step(step)
             if step % self.retrain_ckpt_steps == 0 and is_main_process():
-                self.save_checkpoint_retrain(self.model, step=step)
+                self.save_checkpoint_retrain(step=step)
         if is_main_process():
-            self.save_checkpoint_retrain(self.model, step=self.retrain_steps)
+            self.save_checkpoint_retrain(step=self.retrain_steps)
         torch.distributed.barrier()
         self.remove_masking_hooks()
 
     def _train_admm_prune(self, current_rho):
-        self.current_rho = current_rho
-        for step in range(self.admm_steps):
+        resumed = self.cur_rho == current_rho
+        init_step = 0 if not resumed else self.cur_step
+        for step in range(init_step, self.admm_steps):
+            self._timer_step()
             self._train_one_step(step)
             if step % self.admm_ckpt_steps == 0 and is_main_process():
-                self.save_checkpoint_prune(self.model, rho=current_rho, step=step)
+                self.save_checkpoint_prune(rho=current_rho, step=step)
         if is_main_process():
-            self.save_checkpoint_prune(self.model, rho=current_rho)
+            self.save_checkpoint_prune(rho=current_rho)
         torch.distributed.barrier()
-
-    def _log_scalar(self, *args, **kwargs):
-        if not is_main_process(): return
-        self.writer.add_scalar(*args, **kwargs)
-
-    def _log_histogram(self, *args, **kwargs):
-        if not is_main_process(): return
-        self.writer.add_histogram(*args, **kwargs)
-
-    def _log_figure(self, *args, **kwargs):
-        if not is_main_process(): return
-        self.writer.add_figure(*args, **kwargs)
-
-    def _calc_avg_grads(self):
-        if isinstance(self.model, nn.DataParallel):
-            model = self.model.module
-        else: model = self.model
-        avg_grads = []
-        for n, p in model.named_parameters():
-            if p.requires_grad and 'bias' not in n:
-                avg_grads.append(p.grad.abs().mean().item())
-        return np.array(avg_grads)
-
-    def _plot_avg_grads(self):
-        return plot_grad_flow(self.model.named_parameters())
-
-    def _plot_avg_output(self):
-        # print(self.forward_magnitudes)
-        pd.Series(self.forward_magnitudes).plot()
-        return plt.gcf()
-
-    def _setup_forward_hooks(self):
-        self.forward_magnitudes = {}
-        self.forward_handles = []
-        for name, module in self.model.named_modules():
-            def hook(module, inputs, outputs, name=name):
-                # if name == "bert.encoder.layer.4.attention.self.softmax":
-                #     print("bert.encoder.layer.4.attention.self.softmax", len(inputs),
-                #           inputs[0].min().item(), inputs[0].max().item(),
-                #           inputs[0].abs().mean().item())
-                try:
-                    if is_main_process():
-                        pass
-                        # try:
-                        #     print(name, len(inputs),
-                        #           inputs[0].min().item(), inputs[0].max().item(),
-                        #           inputs[0].abs().mean().item(), end=' ')
-                        # except: print(name, end=' ')
-                        # print('->', outputs[0].min().item(), outputs[0].max().item(),
-                        #       outputs[0].abs().mean().item())
-                except:
-                    print('***error:', name)
-                # try:
-                #     if isinstance(inputs, (list, tuple)): inputs = inputs[0]
-                #     self.forward_magnitudes[name] = inputs.abs().mean().item()
-                # except: pass
-                # if isinstance(outputs, (list, tuple)): outputs = outputs[0]
-                # self.forward_magnitudes[name] = outputs.abs().mean().item()
-            self.forward_handles.append(module.register_forward_hook(hook))
-
-    def _remove_forward_hooks(self):
-        for handle in self.forward_handles:
-            handle.remove()
 
     def _train_one_step(self, my_step):
         global args, average_loss, global_step, training_steps, device, overflow_buf, most_recent_ckpts_paths, files
@@ -352,9 +433,9 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             loss = loss.mean()  # mean() to average on multi-gpu.
 
         if self.cur_phase == PruningPhase.admm:
-            self._log_scalar(f'loss/admm_orig_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
-            self._log_scalar(f'acc/admm_masked_lm_acc_rho{self.current_rho}', masked_lm_acc.item(), global_step=my_step)
-            self._log_scalar(f'acc/admm_next_sentence_acc_rho{self.current_rho}', next_sentence_acc.item(), global_step=my_step)
+            self._log_scalar(f'loss/admm_orig_loss_rho{self.cur_rho}', loss.item(), global_step=my_step)
+            self._log_scalar(f'acc/admm_masked_lm_acc_rho{self.cur_rho}', masked_lm_acc.item(), global_step=my_step)
+            self._log_scalar(f'acc/admm_next_sentence_acc_rho{self.cur_rho}', next_sentence_acc.item(), global_step=my_step)
         else:
             self._log_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
             self._log_scalar('acc/retrain_masked_lm_acc', masked_lm_acc.item(), global_step=my_step)
@@ -364,8 +445,8 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
             orig_loss, admm_loss, loss = self.append_admm_loss(loss, my_step, return_losses=True)
             # print("***", [loss.item() for loss in admm_loss.values()])  # [nan, nan, nan...]
             # print("***", sum(admm_loss.values()).item())  # nan
-            self._log_scalar(f'loss/admm_admm_loss_rho{self.current_rho}', sum(admm_loss.values()).item(), global_step=my_step)
-            self._log_scalar(f'loss/admm_mixed_loss_rho{self.current_rho}', loss.item(), global_step=my_step)
+            self._log_scalar(f'loss/admm_admm_loss_rho{self.cur_rho}', sum(admm_loss.values()).item(), global_step=my_step)
+            self._log_scalar(f'loss/admm_mixed_loss_rho{self.cur_rho}', loss.item(), global_step=my_step)
 
         divisor = args.gradient_accumulation_steps
         if args.gradient_accumulation_steps > 1:
@@ -392,7 +473,7 @@ class ProximalBertPruningManager(ProximalADMMPruningManager):
         self.update_lr(my_step)
         cur_lr = self.optimizer.manual_lr
         if self.cur_phase == PruningPhase.admm:
-            self._log_scalar(f'lr/admm_lr_rho{self.current_rho}', cur_lr, global_step=my_step)
+            self._log_scalar(f'lr/admm_lr_rho{self.cur_rho}', cur_lr, global_step=my_step)
         else:
             self._log_scalar('lr/retrain_lr', cur_lr, global_step=my_step)
 
@@ -584,11 +665,16 @@ def parse_arguments():
                         action='store_true',
                         help="Whether to run training.")
 
-    parser.add_argument("--admm_config",
+    parser.add_argument("--admm_resume_from_checkpoint",
                         default=None,
                         type=str,
-                        required=True,
-                        help="The ADMM Pruning config")
+                        help="Resume training from checkpoint.")
+
+    # parser.add_argument("--admm_config",
+    #                     default=None,
+    #                     type=str,
+    #                     required=True,
+    #                     help="The ADMM Pruning config")
 
     args = parser.parse_args()
     return args
@@ -993,10 +1079,13 @@ def main():
         training_steps = 0
 
         train_loader = infinite_data_loader(checkpoint)
-        prune_manager = ProximalBertPruningManager.from_yaml_file(args.admm_config)
+        # prune_manager = ProximalBertPruningManager.from_yaml_file(args.admm_config)
+        prune_manager = ProximalBertPruningManager.from_dict(vars(args))
         if is_main_process(): print(prune_manager.to_json_string())
         prune_manager.setup_learner(model, optimizer, train_loader)
-        # prune_manager.admm_prune()
+        if args.admm_resume_from_checkpoint:
+            prune_manager.resume_from(args.admm_resume_from_checkpoint)
+        prune_manager.admm_prune()
         prune_manager.masked_retrain()
 
 
