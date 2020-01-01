@@ -142,25 +142,10 @@ class CheckpointMixin:
     def resume_from(self, ckpt_path):
         self._load_full_checkpoint(ckpt_path)
 
-    def _load_model(self, state_dict):
-        try:
-            self.model.load_state_dict(state_dict)
-        except RuntimeError:
-            if isinstance(self.model, nn.DataParallel):
-                model = self.model.module
-            else:
-                model = self.model
-            model.load_state_dict(state_dict)
-
     def _check_ckpt_config(self, state_dict):
         for k, v in state_dict.items():
             if getattr(self, k) == v: continue
             raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
-
-    def _load_checkpoint(self, init_path, **extra):
-        model_path = init_path if isinstance(init_path, (str, Path)) else self._format_ckpt_fname(**extra)
-        print(f"Loading model weights from {model_path}...")
-        self._load_model(torch.load(model_path, map_location='cpu'))
 
     def _load_full_checkpoint(self, ckpt_path):
         state_dict = torch.load(ckpt_path)
