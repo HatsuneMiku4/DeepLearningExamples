@@ -317,7 +317,8 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         self.optimizer = optimizer
         self.train_loader = train_loader
 
-        self._setup_forward_hooks()
+        if is_main_process():
+            self._setup_forward_hooks()  # debugging
 
     def update_lr(self, step):
         if self.cur_phase == PruningPhase.admm:
@@ -360,7 +361,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         else: init_rho_idx = 0
         # self.prune()
         for i in range(init_rho_idx, self.rho_num):
-            if resumed:
+            if not resumed or i > init_rho_idx:  # do not skip initialization in next iteration
                 self._load_ckpt_admm_prune(i)
                 current_rho = self._calc_current_rho(i)
                 current_lamda = self._calc_current_lamda(i)
@@ -369,7 +370,6 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
                     admm=(self.cur_phase == PruningPhase.admm),
                     sparsity_type=self.sparsity_type,
                 ), self.admm, self.model)  # initialize Z variable
-                resumed = False  # do not skip initialization in next iteration
             else: current_rho = self.cur_rho
             self._train_admm_prune(current_rho)
 
