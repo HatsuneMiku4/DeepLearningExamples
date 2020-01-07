@@ -21,12 +21,14 @@ from __future__ import division
 from __future__ import print_function
 
 # ==================
+import csv
 import shutil
 import time
 import logging
 import argparse
 import random
 import os
+import atexit
 from itertools import count
 from pathlib import Path
 
@@ -42,7 +44,7 @@ from tensorboardX import SummaryWriter
 
 from apex import amp
 
-from modeling import BertForPreTraining, BertConfig
+from modeling import BertForPreTraining, BertConfig, BertLayerNorm
 from optimization import BertLAMB
 
 # from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
@@ -60,6 +62,7 @@ sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebook
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity
 from args_to_yaml import *
 
+ENABLE_AMP_CHECKPOINT = True  # previous versions of AMP does not support checkpointing
 
 global_step = 0
 average_loss = 0.0
@@ -89,6 +92,32 @@ def plot_grad_flow(named_parameters, to_file=None):
     plt.grid(True)
     if to_file: plt.savefig(to_file, dpi=200)
     else: return plt.gcf()
+
+
+class CsvWriter:
+    """
+    https://docs.python.org/3.8/library/csv.html#csv.writer
+    """
+    def __init__(self, csv_path, fieldnames, overwrite=False, strict=False):
+        self.csv_path = Path(csv_path)
+        self.fieldnames = fieldnames
+        self.strict = strict
+        if not overwrite and self.csv_path.is_file():
+            raise Exception(f"{csv_path} already exists. "
+                            f"Set overwrite=True if you'd like to overwrite")
+        self.csvfile = self.csv_path.open('w')  # newline=''
+        self.writer = csv.DictWriter(
+            self.csvfile, fieldnames=self.fieldnames,
+            extrasaction='raise' if self.strict else 'ignore'
+        )
+        self.writer.writeheader()
+
+    def __del__(self):
+        if not self.csvfile.closed:
+            self.csvfile.close()
+
+    def writerow(self, *args, **kwargs):
+        self.writer.writerow(*args, **kwargs)
 
 
 class LoggingMixin:
@@ -131,7 +160,7 @@ class CheckpointMixin:
             'admm': self.admm.state_dict(),
             'config': self.to_dict(),
             'optimizer': self.optimizer.state_dict(),
-            'amp': amp.state_dict(),
+            'amp': amp.state_dict() if ENABLE_AMP_CHECKPOINT else None,
             'timer': {
                 'cur_phase': self.cur_phase.name,
                 'cur_rho': self.cur_rho,
@@ -160,7 +189,8 @@ class CheckpointMixin:
         self._load_model(state_dict['model'])
         self.admm.load_state_dict(state_dict['admm'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
-        amp.load_state_dict(state_dict['amp'])
+        if ENABLE_AMP_CHECKPOINT:
+            amp.load_state_dict(state_dict['amp'])
         self._set_timer_status(state_dict['timer'])
 
 
@@ -211,10 +241,66 @@ class TimerMixin:
 
 class DebugMixin:
     def _setup_forward_hooks(self):
+        MONITORED_MTYPES = [nn.Linear, nn.Softmax, BertLayerNorm]
+        MONITORED_PTYPES = ['weight', 'bias']  # nn.Linear, BertLayerNorm
+
+        model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        monitored_modules = [
+            n for n, m in model.named_modules()
+            if isinstance(m, tuple(MONITORED_MTYPES))
+        ]
+        monitored_params = [
+            n for n, p in model.named_parameters()
+            if any(n.endswith(pname) for pname in MONITORED_PTYPES)
+        ]
+
+        logdir = Path(self.tensorboard_logdir)
+        act_log_path = logdir / 'activations.csv'
+        wts_log_path = logdir / 'weights.csv'
+        self.csv_writers['activation'] = CsvWriter(act_log_path, monitored_modules)
+        self.csv_writers['weight'] = CsvWriter(wts_log_path, monitored_params)
+
+        act_ranges = dict()  # kept in the closures of forward hooks
+        wts_ranges = dict()  # kept in the closures of forward hooks
+
         self.forward_magnitudes = {}
         self.forward_handles = []
+
+        # def to_flat_np(ts): return ts.detach().cpu().numpy().flatten()
+        def dynamic_range(ts): return ts.min().item(), ts.max().item()
+
         for name, module in self.model.named_modules():
+            # noinspection PyUnusedLocal
             def hook(module, inputs, outputs, name=name):
+                nonlocal act_ranges, wts_ranges
+
+                # log every {args.gradient_accumulation_steps} steps
+                if self.cur_step % args.gradient_accumulation_steps: return
+                if name == '':
+                    # forward pass completed, write one row to csv
+                    try:
+                        self.csv_writers['activation'].writerow(act_ranges)
+                        self.csv_writers['weight'].writerow(wts_ranges)
+                    except ValueError:
+                        print(monitored_params)
+                        raise
+                    act_ranges, wts_ranges = dict(), dict()
+                    return
+
+                for ptype in MONITORED_PTYPES:
+                    param = getattr(module, ptype, None)
+                    if param is None: continue
+                    tag = f"weight/{name.replace('.', '_')}.{ptype}"
+                    # weights_np = to_flat_np(param)
+                    # self._log_histogram(tag, weights_np, self.cur_step)  # tensorboard logging
+                    wts_ranges[f'{name}.{ptype}'] = dynamic_range(param)  # csv logging
+
+                if not isinstance(module, tuple(MONITORED_MTYPES)): return
+                tag = f"activation/{name.replace('.', '_')}"
+                # outputs_np = to_flat_np(outputs)
+                # self._log_histogram(tag, outputs_np, self.cur_step)  # tensorboard logging
+                act_ranges[name] = dynamic_range(outputs)  # csv logging
+
                 # if name == "bert.encoder.layer.4.attention.self.softmax":
                 #     print("bert.encoder.layer.4.attention.self.softmax", len(inputs),
                 #           inputs[0].min().item(), inputs[0].max().item(),
@@ -237,6 +323,8 @@ class DebugMixin:
                 # except: pass
                 # if isinstance(outputs, (list, tuple)): outputs = outputs[0]
                 # self.forward_magnitudes[name] = outputs.abs().mean().item()
+
+            # noinspection PyUnresolvedReferences
             self.forward_handles.append(module.register_forward_hook(hook))
 
     def _remove_forward_hooks(self):
@@ -279,11 +367,13 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         super().__init__(**kwargs)
         self.cur_rho = None
         self.cur_step = None
-        self.writer = None
+        self.writer = None  # tensorboard writer
+        self.csv_writers = dict()  # {logger_name: csv_logger}
         self._timer_iter = self._timer_gen()
         self.sparsity_tester = test_irregular_sparsity
+        atexit.register(self._cleanup)
 
-    def __del__(self):
+    def _cleanup(self):
         if self.writer:
             self.writer.export_scalars_to_json(self.tensorboard_json_path)
             self.writer.close()
