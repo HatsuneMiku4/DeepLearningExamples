@@ -190,11 +190,21 @@ class CheckpointMixin:
         state_dict = torch.load(ckpt_path)
         self._check_ckpt_config(state_dict['config'])
         self._load_model(state_dict['model'])
-        self.admm.load_state_dict(state_dict['admm'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
         if ENABLE_AMP_CHECKPOINT:
             amp.load_state_dict(state_dict['amp'])
         self._set_timer_status(state_dict['timer'])
+        if self.cur_phase == PruningPhase.admm:
+            cur_rho = self.cur_rho
+            cur_lambda = None
+            for rho_idx in count():
+                if cur_rho <= self._calc_current_rho(rho_idx):
+                    cur_lambda = self._calc_current_lamda(rho_idx)
+        else:
+            cur_rho = self.initial_rho
+            cur_lambda = self.initial_lambda
+        self._init_admm(rho=cur_rho, lamda=cur_lambda)
+        self.admm.load_state_dict(state_dict['admm'])
 
 
 class TimerMixin:
