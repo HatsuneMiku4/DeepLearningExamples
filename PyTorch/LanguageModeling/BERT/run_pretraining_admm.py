@@ -74,26 +74,6 @@ files = None
 args = None
 
 
-def plot_grad_flow(named_parameters, to_file=None):
-    plt.clf()
-    ave_grads = []
-    layers = []
-    for n, p in named_parameters:
-        if p.requires_grad and "bias" not in n:
-            layers.append(n)
-            ave_grads.append(p.grad.abs().mean())
-    plt.plot(ave_grads, alpha=0.3, color="b")
-    plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
-    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(xmin=0, xmax=len(ave_grads))
-    plt.xlabel("Layers")
-    plt.ylabel("average gradient")
-    plt.title("Gradient flow")
-    plt.grid(True)
-    if to_file: plt.savefig(to_file, dpi=200)
-    else: return plt.gcf()
-
-
 class CsvWriter:
     """
     https://docs.python.org/3.8/library/csv.html#csv.writer
@@ -143,8 +123,28 @@ class LoggingMixin:
                 avg_grads.append(p.grad.abs().mean().item())
         return np.array(avg_grads)
 
+    @staticmethod
+    def _plot_grad_flow(named_parameters, to_file=None):
+        plt.clf()
+        ave_grads = []
+        layers = []
+        for n, p in named_parameters:
+            if p.requires_grad and "bias" not in n:
+                layers.append(n)
+                ave_grads.append(p.grad.abs().mean())
+        plt.plot(ave_grads, alpha=0.3, color="b")
+        plt.hlines(0, 0, len(ave_grads) + 1, linewidth=1, color="k")
+        plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
+        plt.xlim(xmin=0, xmax=len(ave_grads))
+        plt.xlabel("Layers")
+        plt.ylabel("average gradient")
+        plt.title("Gradient flow")
+        plt.grid(True)
+        if to_file: plt.savefig(to_file, dpi=200)
+        else: return plt.gcf()
+
     def _plot_avg_grads(self):
-        return plot_grad_flow(self.model.named_parameters())
+        return self._plot_grad_flow(self.model.named_parameters())
 
     def _plot_avg_output(self):
         # print(self.forward_magnitudes)
@@ -173,8 +173,11 @@ class CheckpointMixin:
 
     def _check_ckpt_config(self, state_dict):
         for k, v in state_dict.items():
-            if getattr(self, k) == v: continue
-            raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
+            if k == 'class':
+                if v != self.__class__.__name__:
+                    raise Exception(f'Class mismatch: ckpt: {v} ~ now: {self.__class__.__name__}')
+            elif getattr(self, k) != v:
+                raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
 
     def _load_checkpoint(self, init_path, **extra):
         model_path = init_path if isinstance(init_path, (str, Path)) else self._format_ckpt_fname(**extra)
