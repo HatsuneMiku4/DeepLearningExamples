@@ -187,7 +187,8 @@ class CheckpointMixin:
         except: self._load_model(state_dict)
 
     def _load_full_checkpoint(self, ckpt_path):
-        state_dict = torch.load(ckpt_path)
+        device = torch.device('cuda', torch.cuda.current_device())
+        state_dict = torch.load(ckpt_path, map_location=device)   
         self._check_ckpt_config(state_dict['config'])
         self._load_model(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
@@ -198,11 +199,13 @@ class CheckpointMixin:
             cur_rho = self.cur_rho
             init_rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
             cur_lambda = self._calc_current_lamda(rho_idx)
+            #print('self.cur_rho',self.cur_rho)
         else:
             cur_rho = self.initial_rho
             cur_lambda = self.initial_lambda
         self._init_admm(rho=cur_rho, lamda=cur_lambda)
         self.admm.load_state_dict(state_dict['admm'])
+        #print('finish load')
 
 
 class TimerMixin:
