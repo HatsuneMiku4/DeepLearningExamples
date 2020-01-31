@@ -215,7 +215,7 @@ class TimerMixin:
         self.cur_rho = rho
         self.cur_step = step
 
-    def _timer_gen(self):
+    def _timer_gen_full(self):
         phase = PruningPhase.admm
         for rho_idx in range(self.rho_num):
             rho = self._calc_current_rho(rho_idx)
@@ -225,6 +225,14 @@ class TimerMixin:
         for step in count():
             print(f'[WARNING] continue retraining after {self.retrain_steps} steps')
             print(f'Current step: {self.retrain_steps}+{step}. Please check your configuration.')
+
+    def _timer_gen(self):
+        resumed = self.cur_phase is not None
+        if not resumed:
+            yield from self._timer_gen_full()
+        else:  # timer status has been properly recovered from checkpoint
+            def match(x): return x != (self.cur_phase, self.cur_rho, self.cur_step)
+            yield from dropwhile(match, self._timer_gen_full())
 
     def _set_timer_status(self, state_dict):
         if state_dict['cur_phase'] == PruningPhase.admm.name:
@@ -467,6 +475,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
                     sparsity_type=self.sparsity_type,
                 ), self.admm, self.model)  # initialize Z variable
             else: current_rho = self.cur_rho
+            print('current_rho', current_rho)
             self._train_admm_prune(current_rho)
 
     def masked_retrain(self):
@@ -1181,7 +1190,7 @@ def main():
         prune_manager.setup_learner(model, optimizer, train_loader)
         if args.admm_resume_from_checkpoint:
             prune_manager.resume_from(args.admm_resume_from_checkpoint)
-        prune_manager.admm_prune()
+        #prune_manager.admm_prune()
         prune_manager.masked_retrain()
 
 
