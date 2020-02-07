@@ -29,7 +29,7 @@ import argparse
 import random
 import os
 import atexit
-from itertools import count
+from itertools import count, dropwhile
 from pathlib import Path
 
 import h5py
@@ -114,9 +114,7 @@ class LoggingMixin:
         self.writer.add_figure(*args, **kwargs)
 
     def _calc_avg_grads(self):
-        if isinstance(self.model, nn.DataParallel):
-            model = self.model.module
-        else: model = self.model
+        model = getattr(self.model, 'module', self.model)
         avg_grads = []
         for n, p in model.named_parameters():
             if p.requires_grad and 'bias' not in n:
@@ -177,7 +175,7 @@ class CheckpointMixin:
                 if v != self.__class__.__name__:
                     raise Exception(f'Class mismatch: ckpt: {v} ~ now: {self.__class__.__name__}')
             elif getattr(self, k) != v:
-                if k == 'fp16': continue 
+                if k == 'fp16': continue
                 raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
 
     def _load_checkpoint(self, init_path, **extra):
@@ -189,7 +187,7 @@ class CheckpointMixin:
 
     def _load_full_checkpoint(self, ckpt_path):
         device = torch.device('cuda', torch.cuda.current_device())
-        state_dict = torch.load(ckpt_path, map_location=device)   
+        state_dict = torch.load(ckpt_path, map_location=device)
         self._check_ckpt_config(state_dict['config'])
         self._load_model(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
@@ -206,7 +204,6 @@ class CheckpointMixin:
             cur_lambda = self.initial_lambda
         self._init_admm(rho=cur_rho, lamda=cur_lambda)
         self.admm.load_state_dict(state_dict['admm'])
-        #print('finish load')
 
 
 class TimerMixin:
@@ -267,7 +264,7 @@ class DebugMixin:
         MONITORED_MTYPES = [nn.Linear, nn.Softmax, BertLayerNorm]
         MONITORED_PTYPES = ['weight', 'bias']  # nn.Linear, BertLayerNorm
 
-        model = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        model = getattr(self.model, 'module', self.model)
         monitored_modules = [
             n for n, m in model.named_modules()
             if isinstance(m, tuple(MONITORED_MTYPES))
@@ -477,7 +474,6 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
                     sparsity_type=self.sparsity_type,
                 ), self.admm, self.model)  # initialize Z variable
             else: current_rho = self.cur_rho
-            print('current_rho', current_rho)
             self._train_admm_prune(current_rho)
             self.sparsity_tester_train(self.model)
 
@@ -488,9 +484,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             self._load_ckpt_masked_retrain()
             self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
             args = argparse.Namespace(sparsity_type=self.sparsity_type)
-            if isinstance(self.model, nn.DataParallel):
-                model = self.model.module
-            else: model = self.model
+            model = getattr(self.model, 'module', self.model)
             admm.hard_prune(args, self.admm, model)
         if is_main_process():
             self.sparsity_tester(self.model)
