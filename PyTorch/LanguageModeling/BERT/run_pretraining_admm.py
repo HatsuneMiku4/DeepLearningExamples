@@ -59,7 +59,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import sys
 sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
-from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity
+from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity, test_irregular_sparsity_train
 from args_to_yaml import *
 
 ENABLE_AMP_CHECKPOINT = True  # previous versions of AMP does not support checkpointing
@@ -177,6 +177,7 @@ class CheckpointMixin:
                 if v != self.__class__.__name__:
                     raise Exception(f'Class mismatch: ckpt: {v} ~ now: {self.__class__.__name__}')
             elif getattr(self, k) != v:
+                if k == 'fp16': continue 
                 raise Exception(f'Config mismatch: ckpt: {k}={v} ~ now: {k}={getattr(self, k)}')
 
     def _load_checkpoint(self, init_path, **extra):
@@ -393,6 +394,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         self.csv_writers = dict()  # {logger_name: csv_logger}
         self._timer_iter = self._timer_gen()
         self.sparsity_tester = test_irregular_sparsity
+        self.sparsity_tester_train = test_irregular_sparsity_train
         atexit.register(self._cleanup)
 
     def _cleanup(self):
@@ -477,6 +479,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             else: current_rho = self.cur_rho
             print('current_rho', current_rho)
             self._train_admm_prune(current_rho)
+            self.sparsity_tester_train(self.model)
 
     def masked_retrain(self):
         resumed = self.cur_phase == PruningPhase.masked_retrain
@@ -1190,7 +1193,7 @@ def main():
         prune_manager.setup_learner(model, optimizer, train_loader)
         if args.admm_resume_from_checkpoint:
             prune_manager.resume_from(args.admm_resume_from_checkpoint)
-        #prune_manager.admm_prune()
+        prune_manager.admm_prune()
         prune_manager.masked_retrain()
 
 
