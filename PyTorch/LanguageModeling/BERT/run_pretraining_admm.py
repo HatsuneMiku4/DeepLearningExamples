@@ -548,9 +548,9 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
 
         if self.cur_phase == PruningPhase.admm:
             orig_loss, admm_loss, loss = self.append_admm_loss(loss, my_step, return_losses=True)
-            print(f'Step {my_step}: orig_loss = {orig_loss.item():.3f}')
-            admm_loss_vals = [loss.item() for loss in admm_loss.values()]
-            print(f'Step {my_step}: admm_loss = {admm_loss_vals}')
+            # print(f'Step {my_step}: orig_loss = {orig_loss.item():.3f}')
+            # admm_loss_vals = [loss.item() for loss in admm_loss.values()]
+            # print(f'Step {my_step}: admm_loss = {admm_loss_vals}')
             # print("***", [loss.item() for loss in admm_loss.values()])  # [nan, nan, nan...]
             # print("***", sum(admm_loss.values()).item())  # nan
             self._log_scalar(f'loss/admm_admm_loss_rho{self.cur_rho}', sum(admm_loss.values()).item(), global_step=my_step)
