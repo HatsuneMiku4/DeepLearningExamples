@@ -223,9 +223,10 @@ class TimerMixin:
         for step in count():
             print(f'[WARNING] continue retraining after {self.retrain_steps} steps')
             print(f'Current step: {self.retrain_steps}+{step}. Please check your configuration.')
+            yield phase, None, self.retrain_steps + step
 
     def _timer_gen(self):
-        resumed = self.cur_phase is not None
+        resumed = self.cur_step is not None
         if not resumed:
             yield from self._timer_gen_full()
         else:  # timer status has been properly recovered from checkpoint
@@ -257,6 +258,8 @@ class TimerMixin:
             assert 0 <= state_dict['cur_step'] < self.retrain_steps, \
                 f"Invalid cur_step: {state_dict['cur_step']}, should not be in [0, {self.retrain_steps})"
         self.cur_step = state_dict['cur_step']
+
+        self._timer_iter = self._timer_gen()
 
 
 class DebugMixin:
