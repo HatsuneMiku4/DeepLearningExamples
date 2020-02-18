@@ -62,7 +62,7 @@ sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebook
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity, test_irregular_sparsity_train
 from args_to_yaml import *
 
-ENABLE_AMP_CHECKPOINT = True  # previous versions of AMP does not support checkpointing
+ENABLE_AMP_CHECKPOINT = False  # previous versions of AMP does not support checkpointing
 
 global_step = 0
 average_loss = 0.0
@@ -196,9 +196,9 @@ class CheckpointMixin:
         self._set_timer_status(state_dict['timer'])
         if self.cur_phase == PruningPhase.admm:
             cur_rho = self.cur_rho
-            init_rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
+            rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
             cur_lambda = self._calc_current_lamda(rho_idx)
-            #print('self.cur_rho',self.cur_rho)
+            # print('self.cur_rho',self.cur_rho)
         else:
             cur_rho = self.initial_rho
             cur_lambda = self.initial_lambda
