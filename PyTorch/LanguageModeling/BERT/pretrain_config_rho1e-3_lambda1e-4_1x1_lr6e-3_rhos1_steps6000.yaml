@@ -1,0 +1,28 @@
+accumulate_into_fp16: false
+allreduce_post_accumulation: true
+allreduce_post_accumulation_fp16: true
+bert_model: bert-base-uncased
+checkpoint_activations: false
+config_file: data/download/google_pretrained_weights/uncased_L-12_H-768_A-12/bert_config.json
+do_train: true
+fp16: true
+gradient_accumulation_steps: 64  # 512
+input_dir: data/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus/
+learning_rate: 0.004
+local_rank: -1
+log_freq: 1.0
+loss_scale: 0.0  # original: 0.0 (dynamic scaling)
+max_predictions_per_seq: 80
+max_seq_length: 512
+max_steps: 1563.0
+num_steps_per_checkpoint: 200
+num_train_epochs: 3.0
+output_dir: /home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/nvidia_bert/results/checkpoints_rho1e-3_lambda1e-4_1x1_lr6e-3_rhos1_steps6000
+phase1_end_step: 7038
+phase2: true
+resume_from_checkpoint: false
+resume_step: -1
+seed: 42
+train_batch_size: 512 # 4096
+warmup_proportion: 0.128
+admm_config: admm_config_rho1e-3_lambda1e-4_1x1_lr6e-3_rhos1_steps6000.yaml
