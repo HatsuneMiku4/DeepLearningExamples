@@ -462,7 +462,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         if self.cur_phase == PruningPhase.admm:
             init_rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
         else: init_rho_idx = 0
-        # self.prune()
+        self.prune()
         for i in range(init_rho_idx, self.rho_num):
             if not resumed or i > init_rho_idx:  # do not skip initialization in next iteration
                 self._load_ckpt_admm_prune(i)
@@ -480,7 +480,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
     def masked_retrain(self):
         resumed = self.cur_phase == PruningPhase.masked_retrain
         if not resumed:
-            # self.retrain()
+            self.retrain()
             self._load_ckpt_masked_retrain()
             self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
             args = argparse.Namespace(sparsity_type=self.sparsity_type)
