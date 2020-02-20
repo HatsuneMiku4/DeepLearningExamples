@@ -587,6 +587,15 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
 
         if training_steps % args.gradient_accumulation_steps == 0:
             global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
+
+            def get_parameter_by_name(model, name):
+                for n, param in model.named_parameters():
+                    if n == name: return param
+
+            model = getattr(self.model, 'module', self.model)
+            for param_name, mask in self.masks.items():
+                get_parameter_by_name(model, param_name).data *= mask
+
             if is_main_process():
                 self.sparsity_tester(self.model)
 
