@@ -71,7 +71,7 @@ $CMD |& tee $LOGFILE
 sed -r 's/
 |(\[A)/\n/g' $LOGFILE > $LOGFILE.edit
 
-throughput=`cat $LOGFILE.edit | grep -E 'Iteration.*[0-9.]+(s/it|it/s)' | tail -1 | egrep -o '[0-9.]+(s/it|it/s)'`
-
+throughput=$(cat $LOGFILE.edit | grep -E 'Iteration.*[0-9.]+(s/it|it/s)' | tail -1 | egrep -o '[0-9.]+(s/it|it/s)')
+\
 echo "throughput: $throughput"
 
