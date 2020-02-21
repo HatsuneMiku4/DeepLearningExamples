@@ -35,6 +35,9 @@ from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modeling import BertForSequenceClassification, BertConfig, WEIGHTS_NAME, CONFIG_NAME
 from tokenization import BertTokenizer
 from optimization import BertAdam, warmup_linear
+from utils import is_main_process
+
+from run_pretraining_admm import parse_my_arguments, args_from_yaml, args_to_yaml
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -312,6 +315,11 @@ def parse_arguments():
                         type=str,
                         required=True,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
+    parser.add_argument("--sparsity_config",
+                        default=None,
+                        type=str,
+                        required=True,
+                        help="The YAML config file specifying pruning ratios.")
     parser.add_argument("--bert_model", default=None, type=str, required=True,
                         help="Bert pre-trained model selected in the list: bert-base-uncased, "
                              "bert-large-uncased, bert-base-cased, bert-large-cased, bert-base-multilingual-uncased, "
@@ -405,9 +413,22 @@ def parse_arguments():
     return args
 
 
+def get_parameter_by_name(model, name):
+    for n, param in model.named_parameters():
+        if n == name: return param
+
+
 # noinspection PyUnresolvedReferences
 def main():
-    args = parse_arguments()
+    # args = parse_arguments()
+    # del args.local_rank
+    # print(args)
+    # args_to_yaml(args, 'config_finetune_train_glue_mrpc.yaml')
+    # exit(0)
+
+    config_yaml, local_rank = parse_my_arguments()
+    args = args_from_yaml(config_yaml)
+    args.local_rank = local_rank
 
     """ Experiment Setup """
 
@@ -508,6 +529,18 @@ def main():
     elif n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
+    with open(args.sparsity_config, 'r') as f:
+        raw_dict = yaml.load(f, Loader=yaml.SafeLoader)
+        masks = dict.fromkeys(raw_dict['prune_ratios'].keys())
+
+    plain_model = getattr(model, 'module', model)
+
+    for param_name in masks:
+        param = get_parameter_by_name(plain_model, param_name)
+        if param is None: raise Exception(f'Cannot find {param_name}')
+        non_zero_mask = torch.ne(param, 0).to(param.dtype)
+        masks[param_name] = non_zero_mask
+
     """ Prepare Optimizer"""
 
     # Prepare optimizer
@@ -601,16 +634,23 @@ def main():
                     optimizer.zero_grad()
                     global_step += 1
 
+                    plain_model = getattr(model, 'module', model)
+                    for param_name, mask in masks.items():
+                        get_parameter_by_name(plain_model, param_name).data *= mask
+
+
     """ Load Model for Evaluation """
 
     if args.do_train:
         # Save a trained model and the associated configuration
-        model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
         output_model_file = os.path.join(args.output_dir, WEIGHTS_NAME)
-        torch.save(model_to_save.state_dict(), output_model_file)
         output_config_file = os.path.join(args.output_dir, CONFIG_NAME)
-        with open(output_config_file, 'w') as f:
-            f.write(model_to_save.config.to_json_string())
+
+        if is_main_process():  # only the main process should save the trained model
+            model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
+            torch.save(model_to_save.state_dict(), output_model_file)
+            with open(output_config_file, 'w') as f:
+                f.write(model_to_save.config.to_json_string())
 
         # Load a trained model and config that you have fine-tuned
         config = BertConfig(output_config_file)

@@ -188,7 +188,7 @@ class CheckpointMixin:
     def _load_full_checkpoint(self, ckpt_path):
         device = torch.device('cuda', torch.cuda.current_device())
         state_dict = torch.load(ckpt_path, map_location=device)
-        self._check_ckpt_config(state_dict['config'])
+        # self._check_ckpt_config(state_dict['config'])
         self._load_model(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
         if ENABLE_AMP_CHECKPOINT:
@@ -491,15 +491,15 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             admm.hard_prune(args, self.admm, model)
         if is_main_process():
             self.sparsity_tester(self.model)
-        self._train_masked_retrain()
+        self._train_masked_retrain(resumed)
         if is_main_process():
             self.sparsity_tester(self.model)
 
     def _init_admm(self, rho, lamda):
         self.admm = admm.ADMM(self.model, file_name=self.sparsity_config, rho=rho, lamda=lamda)
 
-    def _train_masked_retrain(self):
-        resumed = self.cur_phase == PruningPhase.masked_retrain
+    def _train_masked_retrain(self, resumed=False):
+        # resumed = self.cur_phase == PruningPhase.masked_retrain
         init_step = 0 if not resumed else self.cur_step
         self.setup_masking_hooks()
         for step in range(init_step, self.retrain_steps):
@@ -587,6 +587,17 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
 
         if training_steps % args.gradient_accumulation_steps == 0:
             global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
+
+            def get_parameter_by_name(model, name):
+                for n, param in model.named_parameters():
+                    if n == name: return param
+
+            model = getattr(self.model, 'module', self.model)
+            for param_name, mask in self.masks.items():
+                get_parameter_by_name(model, param_name).data *= mask
+
+            if is_main_process():
+                self.sparsity_tester(self.model)
 
         # if global_step >= args.max_steps:
         #     print_final_loss(training_steps, average_loss, divisor)
