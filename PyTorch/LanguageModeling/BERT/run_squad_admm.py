@@ -1127,7 +1127,8 @@ def main():
 
                     plain_model = getattr(model, 'module', model)
                     for param_name, mask in masks.items():
-                        get_parameter_by_name(plain_model, param_name).data *= mask
+                        param = get_parameter_by_name(plain_model, param_name)
+                        param.data *= mask.to(param.dtype)
 
                 if step % args.log_freq == 0:
                     # logger.info("Step {}: Loss {}, LR {} ".format(global_step, loss.item(), lr_this_step))

@@ -529,15 +529,18 @@ def main():
     elif n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
+    plain_model = getattr(model, 'module', model)
+
     with open(args.sparsity_config, 'r') as f:
         raw_dict = yaml.load(f, Loader=yaml.SafeLoader)
         masks = dict.fromkeys(raw_dict['prune_ratios'].keys())
-
-    plain_model = getattr(model, 'module', model)
+        for param_name in list(masks.keys()):
+            if get_parameter_by_name(plain_model, param_name) is None:
+                print(f'[WARNING] Cannot find {param_name}')
+                del masks[param_name]
 
     for param_name in masks:
         param = get_parameter_by_name(plain_model, param_name)
-        if param is None: raise Exception(f'Cannot find {param_name}')
         non_zero_mask = torch.ne(param, 0).to(param.dtype)
         masks[param_name] = non_zero_mask
 
