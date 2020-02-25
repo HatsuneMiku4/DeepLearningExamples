@@ -507,6 +507,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             self._train_one_step(step)
             if step % self.retrain_ckpt_steps == 0 and is_main_process():
                 self.save_checkpoint_retrain(step=step)
+                self.sparsity_tester(self.model)
         if is_main_process():
             self.save_checkpoint_retrain(step=self.retrain_steps)
         torch.distributed.barrier()
@@ -592,12 +593,15 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
                 for n, param in model.named_parameters():
                     if n == name: return param
 
-            model = getattr(self.model, 'module', self.model)
-            for param_name, mask in self.masks.items():
-                get_parameter_by_name(model, param_name).data *= mask
+            try:
+                model = getattr(self.model, 'module', self.model)
+                for param_name, mask in self.masks.items():
+                    get_parameter_by_name(model, param_name).data *= mask
+            except:
+                continue           
 
-            if is_main_process():
-                self.sparsity_tester(self.model)
+            #if is_main_process():
+            #    self.sparsity_tester(self.model)
 
         # if global_step >= args.max_steps:
         #     print_final_loss(training_steps, average_loss, divisor)
