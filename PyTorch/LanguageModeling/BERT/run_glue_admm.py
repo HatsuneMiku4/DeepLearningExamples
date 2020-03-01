@@ -38,7 +38,7 @@ from optimization import BertAdam, warmup_linear
 from utils import is_main_process
 
 from run_pretraining_admm import parse_my_arguments, args_from_yaml, args_to_yaml
-
+from args_to_yaml import *
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
@@ -555,7 +555,7 @@ def main():
     ]
     if args.fp16:
         try:
-            from apex.optimizers import FP16_Optimizer
+            from apex.fp16_utils.fp16_optimizer import FP16_Optimizer
             from apex.optimizers import FusedAdam
         except ImportError:
             raise ImportError(

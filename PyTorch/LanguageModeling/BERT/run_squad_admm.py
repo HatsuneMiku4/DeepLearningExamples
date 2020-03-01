@@ -43,7 +43,7 @@ from tokenization import (BasicTokenizer, BertTokenizer, whitespace_tokenize)
 from utils import is_main_process
 
 from run_pretraining_admm import parse_my_arguments, args_to_yaml, args_from_yaml
-
+from args_to_yaml import *
 if sys.version_info[0] == 2:
     import cPickle as pickle
 else:
@@ -973,9 +973,16 @@ def main():
 
     plain_model = getattr(model, 'module', model)
 
+    with open(args.sparsity_config, 'r') as f:
+        raw_dict = yaml.load(f, Loader=yaml.SafeLoader)
+        masks = dict.fromkeys(raw_dict['prune_ratios'].keys())
+        for param_name in list(masks.keys()):
+            if get_parameter_by_name(plain_model, param_name) is None:
+                print(f'[WARNING] Cannot find {param_name}')
+                del masks[param_name]
+
     for param_name in masks:
         param = get_parameter_by_name(plain_model, param_name)
-        if param is None: raise Exception(f'Cannot find {param_name}')
         non_zero_mask = torch.ne(param, 0).to(param.dtype)
         masks[param_name] = non_zero_mask
 
@@ -996,7 +1003,7 @@ def main():
             try:
                 # from fused_adam_local import FusedAdamBert as FusedAdam
                 from apex.optimizers import FusedAdam
-                from apex.optimizers import FP16_Optimizer
+                from apex.fp16_utils.fp16_optimizer import FP16_Optimizer
                 # from apex.contrib.optimizers import FP16_Optimizer
             except ImportError:
                 raise ImportError(
