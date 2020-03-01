@@ -2,7 +2,7 @@
 Evaluate model on SQuAD v1.1 and GLUE
 Usage:
     # First, check out if default values in DEFAULT_GLUE_ARGS are suitable for your use
-    loss, acc = validate_on_glue(
+    acc = validate_on_glue(
         'my_checkpoint.pth.tar', stage=PruningPhase.masked_retrain,     # current stage
         task_name='MRPC', data_dir='data/glue/MRPC',                    # changes between tasks
         seed=114514,            # remember to change seeds between runs
@@ -107,7 +107,7 @@ DEFAULT_SQUAD_ARGS = {
 def _parse_args(default_args, **kwargs):
     args_dict = default_args.copy()
     args_dict.update(kwargs)
-    return argparse.Namespace(args_dict)
+    return argparse.Namespace(**args_dict)
 
 
 def _set_seed(seed):
@@ -156,7 +156,7 @@ def _train_glue(args, stage):
         "mrpc": run_glue.MrpcProcessor,
     }[task_name]()
     label_list = processor.get_labels()
-    num_labels = {"cola": 2, "mnli": 3, "mrpc": 2, }[args.task_name]
+    num_labels = {"cola": 2, "mnli": 3, "mrpc": 2, }[task_name]
     tokenizer = run_glue.BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
     train_examples = processor.get_train_examples(args.data_dir)
@@ -166,11 +166,12 @@ def _train_glue(args, stage):
 
     model = run_glue.BertForSequenceClassification.from_pretrained(
         args.bert_model, cache_dir=cache_dir, num_labels=num_labels)
-    _load_checkpoint(model, args.checkpoint_path)
+    _load_checkpoint(model, args.init_checkpoint)
 
     if stage == PruningPhase.admm:
         _hard_mask(model, args.sparsity_config)
     if args.fp16: model = model.half()
+    model = model.cuda()
     model = torch.nn.DataParallel(model)
 
     plain_model = getattr(model, 'module', model)
@@ -196,7 +197,7 @@ def _train_glue(args, stage):
     ]
     if args.fp16:
         try:
-            from apex.optimizers import FP16_Optimizer
+            from apex.fp16_utils.fp16_optimizer import FP16_Optimizer
             from apex.optimizers import FusedAdam
         except ImportError:
             raise ImportError(
@@ -386,7 +387,7 @@ def _train_squad(args, stage):
         try:
             # from fused_adam_local import FusedAdamBert as FusedAdam
             from apex.optimizers import FusedAdam
-            from apex.optimizers import FP16_Optimizer
+            from apex.fp16_utils.fp16_optimizer import FP16_Optimizer
             # from apex.contrib.optimizers import FP16_Optimizer
         except ImportError:
             raise ImportError(

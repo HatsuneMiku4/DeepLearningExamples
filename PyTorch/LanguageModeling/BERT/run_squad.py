@@ -40,7 +40,7 @@ from schedulers import LinearWarmUpScheduler
 from modeling import BertForQuestionAnswering, BertConfig, WEIGHTS_NAME, CONFIG_NAME
 from optimization import BertAdam, warmup_linear
 from tokenization import (BasicTokenizer, BertTokenizer, whitespace_tokenize)
-from admm_utils import is_main_process
+from utils import is_main_process
 
 if sys.version_info[0] == 2:
     import cPickle as pickle
