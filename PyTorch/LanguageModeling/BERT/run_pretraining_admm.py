@@ -593,15 +593,10 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
                 for n, param in model.named_parameters():
                     if n == name: return param
 
-            try:
-                model = getattr(self.model, 'module', self.model)
-                for param_name, mask in self.masks.items():
-                    get_parameter_by_name(model, param_name).data *= mask
-            except:
-                continue           
+            model = getattr(self.model, 'module', self.model)
+            for param_name, mask in self.masks.items():
+                get_parameter_by_name(model, param_name).data *= mask
 
-            #if is_main_process():
-            #    self.sparsity_tester(self.model)
 
         # if global_step >= args.max_steps:
         #     print_final_loss(training_steps, average_loss, divisor)

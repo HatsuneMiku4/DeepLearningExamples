@@ -26,9 +26,14 @@ print(f'training configurations: \n{config}')
 
 # see: ProximalADMMPruningManager._calc_current_rho
 final_rho = config['initial_rho'] * 10 ** (config['rho_num'] - 1)
+final_lambda = config['initial_lambda'] * 11 ** (config['rho_num'] - 1)
 total_admm_steps = config['admm_steps'] - 1
 checkpoint['timer']['cur_rho'] = final_rho
 checkpoint['timer']['cur_step'] = total_admm_steps
+checkpoint['admm']['rho'] = final_rho
+checkpoint['admm']['lambda'] = final_lambda
+checkpoint['admm']['rhos'] = { k: final_rho for k in checkpoint['admm']['rhos'] }
+checkpoint['admm']['lamdas'] = { k: final_lambda for k in checkpoint['admm']['lamdas'] }
 
 print(f'new timer status: {checkpoint["timer"]}')
 print(f'saving checkpoint to {args.output_checkpoint}...')
