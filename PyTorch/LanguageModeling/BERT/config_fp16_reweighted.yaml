@@ -1,0 +1,58 @@
+class: ProximalBertPruningManager
+sparsity_config: bert_base_sparsity_config.example.yaml
+init_weights_path: new-nvidia-bert-base-uncased-pytorch_model.bin
+admm_resume_from_checkpoint: false
+
+rew: true
+re: 0.00001
+
+cross_x: 2
+cross_f: 2
+update_freq: 300 # 30
+lr: 0.0001
+admm_steps: 2 # 300
+retrain_steps: 2 # 300
+
+#reweighted args
+same_size: false
+sparsity_type: block_filter
+arch: bert_base_uncased
+optimizer_type: NVLAMB
+dataset_type: EnwikiBookcorpus
+save_dir: test_reweighted_11
+output_dir: ~/DeepLearningExamples/PyTorch/LanguageModeling/BERT/results/checkpoints_reweighted_11
+overwrite: true
+admm_ckpt_steps: 1 # 200
+retrain_ckpt_steps: 1 # 200
+
+fp16: false
+tensorboard_logdir: tb_logs_reweighted_11
+tensorboard_json_path: tb_logs_reweighted_11/all_scalars.json
+
+accumulate_into_fp16: false
+allreduce_post_accumulation: false
+allreduce_post_accumulation_fp16: false
+bert_model: bert-base-uncased
+checkpoint_activations: false
+config_file: data/base/bert_config.json
+do_train: true
+gradient_accumulation_steps: 64  # 512
+input_dir: data/hdf5_dataset/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus/
+learning_rate: 0.003
+local_rank: -1      
+log_freq: 1.0
+loss_scale: 0.0  # original: 0.0 (dynamic scaling)
+max_predictions_per_seq: 80
+max_seq_length: 512
+max_steps: 1563.0
+num_steps_per_checkpoint: 200
+#num_train_epochs: 1.0  #3.0
+phase1_end_step: 7038
+phase2: true
+resume_from_checkpoint: false
+resume_step: -1
+seed: 42
+train_batch_size: 512 # 4096
+warmup_proportion: 0.128                                                                                                                  
+
+
