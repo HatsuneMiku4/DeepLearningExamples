@@ -58,7 +58,8 @@ from apex.amp import _amp_state
 from concurrent.futures import ProcessPoolExecutor
 
 import sys
-sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
+sys.path.append('/home/zhk20002/Cifar10_ADMM_Pruning_PyTorch')
+#sys.path.append('/home/CORP.PKUSC.ORG/hatsu3/research/lab_projects/bert/notebooks/Cifar10_ADMM_Pruning_PyTorch')
 from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity, test_irregular_sparsity_train
 from args_to_yaml import *
 
@@ -155,13 +156,13 @@ class CheckpointMixin:
     def state_dict(self):
         return {
             'model': self.model.state_dict(),
-            'admm': self.admm.state_dict(),
+            #'admm': self.admm.state_dict(),
             'config': self.to_dict(),
             'optimizer': self.optimizer.state_dict(),
             'amp': amp.state_dict() if ENABLE_AMP_CHECKPOINT else None,
             'timer': {
                 'cur_phase': self.cur_phase.name,
-                'cur_rho': self.cur_rho,
+                #'cur_rho': self.cur_rho,
                 'cur_step': self.cur_step,
             },
         }
@@ -188,49 +189,50 @@ class CheckpointMixin:
     def _load_full_checkpoint(self, ckpt_path):
         device = torch.device('cuda', torch.cuda.current_device())
         state_dict = torch.load(ckpt_path, map_location=device)
-        # self._check_ckpt_config(state_dict['config'])
+        self._check_ckpt_config(state_dict['config'])
         self._load_model(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
         if ENABLE_AMP_CHECKPOINT:
             amp.load_state_dict(state_dict['amp'])
         self._set_timer_status(state_dict['timer'])
-        if self.cur_phase == PruningPhase.admm:
-            cur_rho = self.cur_rho
-            rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
-            cur_lambda = self._calc_current_lamda(rho_idx)
-            # print('self.cur_rho',self.cur_rho)
-        else:
-            cur_rho = self.initial_rho
-            cur_lambda = self.initial_lambda
-        self._init_admm(rho=cur_rho, lamda=cur_lambda)
-        self.admm.load_state_dict(state_dict['admm'])
+        #if self.cur_phase == PruningPhase.admm:
+        #    cur_rho = self.cur_rho
+        #    rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
+        #    cur_lambda = self._calc_current_lamda(rho_idx)
+        #    # print('self.cur_rho',self.cur_rho)
+        #else:
+        #    cur_rho = self.initial_rho
+        #    cur_lambda = self.initial_lambda
+        #self._init_admm(rho=cur_rho, lamda=cur_lambda)
+        #self.admm.load_state_dict(state_dict['admm'])
 
 
 class TimerMixin:
     def _timer_step(self):
-        phase, rho, step = next(self._timer_iter)
+        phase, step = next(self._timer_iter)
         self.cur_phase = phase
-        self.cur_rho = rho
+        #self.cur_rho = rho
         self.cur_step = step
 
     def _timer_gen_full(self):
         phase = PruningPhase.admm
-        for rho_idx in range(self.rho_num):
-            rho = self._calc_current_rho(rho_idx)
-            yield from ((phase, rho, step) for step in range(self.admm_steps))
+        #for rho_idx in range(self.rho_num):
+        #    rho = self._calc_current_rho(rho_idx)
+        #    yield from ((phase, rho, step) for step in range(self.admm_steps))
+        yield from ((phase, step) for step in range(self.admm_steps))
         phase = PruningPhase.masked_retrain
-        yield from ((phase, None, step) for step in range(self.retrain_steps))
+        yield from ((phase, step) for step in range(self.retrain_steps))
         for step in count():
             print(f'[WARNING] continue retraining after {self.retrain_steps} steps')
             print(f'Current step: {self.retrain_steps}+{step}. Please check your configuration.')
-            yield phase, None, self.retrain_steps + step
+            yield phase, self.retrain_steps + step
 
     def _timer_gen(self):
         resumed = self.cur_step is not None
         if not resumed:
             yield from self._timer_gen_full()
         else:  # timer status has been properly recovered from checkpoint
-            def match(x): return x != (self.cur_phase, self.cur_rho, self.cur_step)
+            def match(x): return x != (self.cur_phase, self.cur_step)
             yield from dropwhile(match, self._timer_gen_full())
 
     def _set_timer_status(self, state_dict):
@@ -241,15 +243,15 @@ class TimerMixin:
         else:
             raise ValueError(f"Invalid cur_phase: {state_dict['cur_phase']}")
 
-        if self.cur_phase == PruningPhase.admm:
-            possible_rhos = [self._calc_current_rho(i) for i in range(self.rho_num)]
-            def check_rho(rho, eps=1e-6): return any(abs(rho-r) < eps for r in possible_rhos)
-            assert check_rho(state_dict['cur_rho']), \
-                f"Invalid cur_rho: {state_dict['cur_rho']}, should be in {possible_rhos}"
-        else:
-            assert state_dict['cur_rho'] is None, \
-                f"Invalid cur_rho: {state_dict['cur_rho']}, should be None"
-        self.cur_rho = state_dict['cur_rho']
+        #if self.cur_phase == PruningPhase.admm:
+        #    possible_rhos = [self._calc_current_rho(i) for i in range(self.rho_num)]
+        #    def check_rho(rho, eps=1e-6): return any(abs(rho-r) < eps for r in possible_rhos)
+        #    assert check_rho(state_dict['cur_rho']), \
+        #        f"Invalid cur_rho: {state_dict['cur_rho']}, should be in {possible_rhos}"
+        #else:
+        #    assert state_dict['cur_rho'] is None, \
+        #        f"Invalid cur_rho: {state_dict['cur_rho']}, should be None"
+        #self.cur_rho = state_dict['cur_rho']
 
         if self.cur_phase == PruningPhase.admm:
             assert 0 <= state_dict['cur_step'] < self.admm_steps, \
@@ -361,9 +363,10 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         'sparsity_config': None,
         'init_weights_path': None,
 
-        'initial_rho': 0.0001,
-        'rho_num': 1,
-        'initial_lambda': 1,
+        #'initial_rho': 0.0001,
+        #'rho_num': 1,
+        #'initial_lambda': 1,
+        're': 0.001,
         'cross_x': 1,
         'cross_f': 1,
         'update_freq': 300,  # steps
@@ -388,7 +391,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
     # noinspection PyMethodOverriding
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.cur_rho = None
+        #self.cur_rho = None
         self.cur_step = None
         self.writer = None  # tensorboard writer
         self.csv_writers = dict()  # {logger_name: csv_logger}
@@ -439,72 +442,212 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             self.optimizer.set_lr(new_lr)
 
     # noinspection PyMethodOverriding
-    def append_admm_loss(self, loss, step, return_losses=False):
+    def append_reweighted_loss(self, ce_loss, step, layers, rew_layers, return_losses=False):
         assert self.cur_phase == PruningPhase.admm
         args = argparse.Namespace(
             admm=True, verbose=True,
             admm_update_freq=self.update_freq,
-            lamda=self.initial_lambda,
+            rew=True,
+            same_size = False,
+            re=self.re,
+            #lamda=self.initial_lambda,
             sparsity_type=self.sparsity_type,
             cross_x=self.cross_x,
             cross_f=self.cross_f,
         )
         writer = self.writer if is_main_process() else None
-        admm.proximal_update_per_step(args, self.admm, self.model, step, writer=writer)
-        admm.admm_update_per_step(args, self.admm, self.model, step)
-        losses = admm.append_admm_loss(args, self.admm, self.model, loss)
-        loss, admm_loss, mixed_loss = losses
-        if not return_losses: return mixed_loss
-        else: return losses
+        if args.rew & (layers!=None):
+            #if i == 0:
+            #print("reweighted l1 training...\n")
+            #adjust_rew_learning_rate2(optimizer)
 
-    def admm_prune(self):
+            l1_loss = 0
+            # add reweighted l1 loss
+            #print('rew_layers',rew_layers)
+            #print('rew_milestone',rew_milestone)
+            #print('step - 1',step - 1)
+            if step - 1 in rew_milestone:
+            #if i == 0 and epoch - 1 in rew_milestone:
+                print("reweighted l1 update")
+                for j in range(len(layers)):
+                    if args.sparsity_type == "irregular":
+                        rew_layers[j] = (1 / (layers[j].data + eps))
+                    elif args.sparsity_type == "column":
+                        rew_layers[j] = (1 / (torch.norm(layers[j].data, dim=0) + eps))
+                    elif args.sparsity_type == "filter":
+                        pass
+                    elif args.sparsity_type == "block_filter":
+                        shape = layers[j].shape
+                        conv = layers[j].reshape(shape[0], -1)      
+                        # print('weight.shape', conv.shape)
+                        if conv.shape[1] % args.cross_x != 0:
+                            print("the layer size (cross_x) is not divisible", conv.shape[1], args.cross_x)
+                            # raise SyntaxError("block_size error")
+                        if args.same_size:
+                            cross_x = int(conv.shape[1] / args.cross_x)
+                        else:
+                            cross_x = args.cross_x  # cross_x
+                        convfrag = torch.chunk(conv, cross_x, dim=1)    # divide conv into blocks. -libn
+
+                        mat = None
+                        for k in range(len(convfrag)):
+                            if mat is None:
+                                mat = convfrag[k]                       # if cross_x = 8, convfrag[j].shape=[64,4]. -libn
+                            else:
+                                mat = torch.cat((mat, convfrag[k]), 0)  # mat.shape=[64*num_blocks, 4]. -libn
+                        rew_layers[j] = (1 / (torch.norm(mat.data, dim=1) + eps))   # calculate the l2 norm of each row of mat. -> rew_layers[j].shape=[64*num_blocks]. -libn
+
+                    elif args.sparsity_type == "block_column":
+                        shape = layers[j].shape
+                        conv = layers[j].reshape(shape[0], -1)      # conv.shape=[64, 27]. -libn 
+                        # print('weight.shape', conv.shape)   
+                        if conv.shape[0] % args.cross_f != 0:
+                            print("the layer size (cross_f) is not divisible", conv.shape[0], args.cross_f)
+                            # raise SyntaxError("block_size error")
+                        if args.same_size:
+                            cross_f = int(conv.shape[0] / args.cross_f)
+                        else:
+                            cross_f = args.cross_f  # cross_f
+                        convfrag = torch.chunk(conv, cross_f, dim=0)   # if cross_f=8, convfrag[j].shape=[8,27]. -libn
+
+                        mat = None
+                        for k in range(len(convfrag)):
+                            if mat is None:
+                                mat = convfrag[k]
+                            else:
+                                mat = torch.cat((mat, convfrag[k]), 1)
+                        rew_layers[j] = (1 / (torch.norm(mat.data, dim=0) + eps))   # calculate the l2 norm of each column of mat. -> rew_layers[j].shape=[27]. -libn
+
+                    elif args.sparsity_type == "block_wise":
+                        # TODO:
+                        rew_layers[j] = (1 / (torch.norm(layers[j].data, dim=0) + eps)) # R updated. -libn
+
+            for j in range(len(layers)):
+                rew = rew_layers[j]
+                conv_layer = layers[j]
+                if args.sparsity_type == "irregular":
+                    l1_loss = l1_loss + re[j] * torch.sum((torch.abs(rew * conv_layer)))
+                elif args.sparsity_type == "column":
+                    l1_loss = l1_loss + 1e-5 * torch.sum(rew * torch.norm(conv_layer, dim=0))
+                elif args.sparsity_type == "filter":
+                    pass
+                elif args.sparsity_type == "block_filter":
+                    shape = layers[j].shape
+                    conv = layers[j].reshape(shape[0], -1)
+                    # print('weight.shape', conv.shape)
+                    if conv.shape[1] % args.cross_x != 0: # 4 blocks -> cross_x = 2 -libn Kong!
+                        print("the layer size (cross_x) is not divisible", conv.shape[1], args.cross_x)
+                        # raise SyntaxError("block_size error")
+                    if args.same_size:
+                        cross_x = int(conv.shape[1] / args.cross_x)
+                    else:
+                        cross_x = args.cross_x  # cross_x
+                    convfrag = torch.chunk(conv, cross_x, dim=1)
+
+                    mat = None
+                    for k in range(len(convfrag)):
+                        if mat is None:
+                            mat = convfrag[k]
+                        else:
+                            mat = torch.cat((mat, convfrag[k]), 0)
+                    #l1_loss = l1_loss + args.re * torch.sum(rew * torch.norm(mat, dim=1))
+                    #print('rew',rew.shape)
+                    #print('mat',mat.shape)
+                    #print('l1_loss',l1_loss)
+                    mat2=torch.norm(mat, dim=1)
+                    #print('mat2',mat2.shape)
+                    if rew.shape == mat2.shape:
+                        #l1_loss = l1_loss + 1e-3 * torch.sum(rew * mat2)
+                        l1_loss = l1_loss + args.re * torch.sum(rew * mat2)
+                    else:
+                        print('rew.shape != mat2.shape', rew.shape , mat2.shape )
+                        pass
+
+
+                    #print('l1_loss',l1_loss)
+
+                elif args.sparsity_type == "block_column":
+                    shape = layers[j].shape
+                    conv = layers[j].reshape(shape[0], -1)
+                    if conv.shape[0] % args.cross_f != 0:
+                        print("the layer size is not divisible", conv.shape[0], conv.shape[1], args.cross_f,
+                              args.cross_x)
+                        raise SyntaxError("block_size error")
+                    if args.same_size:
+                        cross_f = int(conv.shape[0] / args.cross_f)
+                    else:
+                        cross_f = args.cross_f  # cross_f
+                    convfrag = torch.chunk(conv, cross_f, dim=0)
+
+                    mat = None
+                    for j in range(len(convfrag)):
+                        if mat is None:
+                            mat = convfrag[j]
+                        else:
+                            mat = torch.cat((mat, convfrag[j]), 1)
+                    l1_loss = l1_loss + penalty_para[j] * torch.sum(rew * torch.norm(mat, dim=0))
+
+            ce_loss = l1_loss + ce_loss
+        #admm.proximal_update_per_step(args, self.admm, self.model, step, writer=writer)
+        #admm.admm_update_per_step(args, self.admm, self.model, step)
+        #losses = admm.append_admm_loss(args, self.admm, self.model, loss)
+        #loss, admm_loss, mixed_loss = losses
+        return ce_loss
+
+    def reweighted_prune(self):
         resumed = self.cur_phase is not None
         if self.cur_phase == PruningPhase.masked_retrain:
-            print('ADMM pruning has finished. Skipping admm_prune...')
+            print('Pruning has finished. Skipping prune...')
             return
-        if self.cur_phase == PruningPhase.admm:
-            init_rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
-        else: init_rho_idx = 0
-        self.prune()
-        for i in range(init_rho_idx, self.rho_num):
-            if not resumed or i > init_rho_idx:  # do not skip initialization in next iteration
-                self._load_ckpt_admm_prune(i)
-                current_rho = self._calc_current_rho(i)
-                current_lamda = self._calc_current_lamda(i)
-                self._init_admm(rho=current_rho, lamda=current_lamda)
-                admm.admm_initialization(argparse.Namespace(
-                    admm=(self.cur_phase == PruningPhase.admm),
-                    sparsity_type=self.sparsity_type,
-                ), self.admm, self.model)  # initialize Z variable
-            else: current_rho = self.cur_rho
-            self._train_admm_prune(current_rho)
-            self.sparsity_tester_train(self.model)
+        #if not resumed:
+            #self._load_ckpt_reweighted_prune()
 
-    def masked_retrain(self):
+        self.prune() #from def prune(self): let self.cur_phase = PruningPhase.admm
+        self._train_reweighted_prune(self.model)
+        self.sparsity_tester_train(self.model)
+
+    def masked_retrain_reweighted(self):
         resumed = self.cur_phase == PruningPhase.masked_retrain
         if not resumed:
             self.retrain()
-            self._load_ckpt_masked_retrain()
-            self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
-            args = argparse.Namespace(sparsity_type=self.sparsity_type)
+            self._load_ckpt_masked_retrain_reweighted()
+
+            self.prune_ratios = []
+            with open("bert_base_sparsity_config.example_part.yaml") as stream:
+                try:
+                    raw_dict = yaml.load(stream)
+                    self.prune_ratios = raw_dict['prune_ratios']
+                except yaml.YAMLError as exc:
+                    print(exc)
+
+            #self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
+            args = argparse.Namespace(
+            sparsity_type=self.sparsity_type,
+            cross_x=self.cross_x,
+            cross_f=self.cross_f,
+            same_size = False,
+            threshold = 0.0001,
+            re=self.re
+            )
             model = getattr(self.model, 'module', self.model)
-            admm.hard_prune(args, self.admm, model)
+            admm.hard_prune_reweighted(args, self.prune_ratios, model)
         if is_main_process():
+            #print('is_main_process')
             self.sparsity_tester(self.model)
-        self._train_masked_retrain(resumed)
+        self._train_masked_retrain_reweighted(resumed)
         if is_main_process():
             self.sparsity_tester(self.model)
 
-    def _init_admm(self, rho, lamda):
-        self.admm = admm.ADMM(self.model, file_name=self.sparsity_config, rho=rho, lamda=lamda)
+    #def _init_admm(self, rho, lamda):
+    #    self.admm = admm.ADMM(self.model, file_name=self.sparsity_config, rho=rho, lamda=lamda)
 
-    def _train_masked_retrain(self, resumed=False):
-        # resumed = self.cur_phase == PruningPhase.masked_retrain
+    def _train_masked_retrain_reweighted(self, resumed=False):
+        #resumed = self.cur_phase == PruningPhase.masked_retrain
         init_step = 0 if not resumed else self.cur_step
-        self.setup_masking_hooks()
+        self.setup_masking_hooks_reweighted()
         for step in range(init_step, self.retrain_steps):
             self._timer_step()
-            self._train_one_step(step)
+            self._train_one_step_reweighted(step, layers=None, rew_layers=None)
             if step % self.retrain_ckpt_steps == 0 and is_main_process():
                 self.save_checkpoint_retrain(step=step)
                 self.sparsity_tester(self.model)
@@ -513,19 +656,90 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         torch.distributed.barrier()
         self.remove_masking_hooks()
 
-    def _train_admm_prune(self, current_rho):
-        resumed = self.cur_rho == current_rho
+    def _train_reweighted_prune(self, model):
+
+        layers = []
+        for name, param in model.named_parameters():
+            # added for transformer. -libn
+            if ('weight' in name) & (len(param.shape)==2):
+                layers.append(param)
+                print('one layer added: ', name, 'shape: ', param.shape)
+        print('len(layers) = ', len(layers))
+        global eps
+        eps = 1e-3
+        # initialize rew_layer
+        rew_layers = []
+        for i in range(len(layers)):
+            conv_layer = layers[i]
+            if args.sparsity_type == "irregular":
+                rew_layers.append(1 / (conv_layer.data + eps))
+            elif args.sparsity_type == "column":
+                rew_layers.append(1 / (torch.norm(conv_layer.data, dim=0) + eps))
+            elif args.sparsity_type == "filter":
+                pass
+            elif args.sparsity_type == "block_filter":
+                shape = conv_layer.shape
+                conv = conv_layer.reshape(shape[0],-1)
+                if conv.shape[1]%args.cross_x != 0 :
+                    print("the layer size is not divisible",conv.shape[1], args.cross_x)
+                    # raise SyntaxError("block_size error")
+                if args.same_size:
+                    cross_x = int(conv.shape[1]/args.cross_x)
+                else:
+                    cross_x = args.cross_x  # cross_x
+                convfrag = torch.chunk(conv, cross_x, dim=1)
+
+                mat = None
+                for j in range(len(convfrag)):
+                    if mat is None:
+                        mat = convfrag[j]
+                    else:
+                        mat = torch.cat((mat,convfrag[j]),0)
+
+                rew_layers.append(1 / (torch.norm(mat.data, dim=1) + eps))
+            elif args.sparsity_type == "block_column":
+                shape = conv_layer.shape
+                conv = conv_layer.reshape(shape[0],-1)
+                if conv.shape[0]%args.cross_f != 0 :
+                    print("the layer size is not divisible",conv.shape[0], args.cross_f)
+                    # raise SyntaxError("block_size error")
+                if args.same_size:
+                    cross_f = int(conv.shape[0]/args.cross_f)
+                else:
+                    cross_f = args.cross_f  # cross_f
+                convfrag = torch.chunk(conv, cross_f, dim=0)
+
+                mat = None
+                for j in range(len(convfrag)):
+                    if mat is None:
+                        mat = convfrag[j]
+                    else:
+                        mat = torch.cat((mat,convfrag[j]),1)
+
+                rew_layers.append(1 / (torch.norm(mat.data, dim=0) + eps))
+        #     if i == 0:
+        #         print(mat.shape)
+        # print(rew_layers)
+        global rew_milestone, penalty_para
+        rew_milestone = [500, 1000, 1500, 2000, 2500, 2999]  # epoch that do rew updates
+        # penalty_para = 0.6 * np.array([0, 5e-4, 5e-3, 5e-3, 7e-3, 3e-3, 2e-3, 1e-3, 2e-4, 2e-4, 1e-4, 1e-4, 0.5e-4])
+        penalty_para = 0.6 #* np.array([0, 5.2e-4, 3.8e-3, 3.5e-3, 5.5e-3, 3e-3, 1.8e-3, 1.3e-3, 2.3e-4, 2.2e-4, 1.3e-4, 1e-4, 0.6e-4])
+
+        resumed = self.cur_step is not None
+        print('resumed',resumed)
         init_step = 0 if not resumed else self.cur_step
+        print('init_step',init_step)
+        #print('rew_layers initial before train',rew_layers)
         for step in range(init_step, self.admm_steps):
             self._timer_step()
-            self._train_one_step(step)
+            self._train_one_step_reweighted(step, layers, rew_layers)
             if step % self.admm_ckpt_steps == 0 and is_main_process():
-                self.save_checkpoint_prune(rho=current_rho, step=step)
+                self.save_checkpoint_prune(step=step, re = self.re)
         if is_main_process():
-            self.save_checkpoint_prune(rho=current_rho)
+            self.save_checkpoint_prune(re = self.re)
         torch.distributed.barrier()
 
-    def _train_one_step(self, my_step):
+    def _train_one_step_reweighted(self, my_step,layers, rew_layers):
         global args, average_loss, global_step, training_steps, device, overflow_buf, most_recent_ckpts_paths, files
         epoch, f_id, step, batch = next(self.train_loader)
 
@@ -539,23 +753,22 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             loss = loss.mean()  # mean() to average on multi-gpu.
 
         if self.cur_phase == PruningPhase.admm:
-            self._log_scalar(f'loss/admm_orig_loss_rho{self.cur_rho}', loss.item(), global_step=my_step)
-            self._log_scalar(f'acc/admm_masked_lm_acc_rho{self.cur_rho}', masked_lm_acc.item(), global_step=my_step)
-            self._log_scalar(f'acc/admm_next_sentence_acc_rho{self.cur_rho}', next_sentence_acc.item(), global_step=my_step)
+            self._log_scalar(f'loss/rew_orig_loss_re{self.re}', loss.item(), global_step=my_step)
+            self._log_scalar(f'acc/rew_masked_lm_acc_re{self.re}', masked_lm_acc.item(), global_step=my_step)
+            self._log_scalar(f'acc/rew_next_sentence_acc_re{self.re}', next_sentence_acc.item(), global_step=my_step)
         else:
             self._log_scalar('loss/retrain_loss', loss.item(), global_step=my_step)
             self._log_scalar('acc/retrain_masked_lm_acc', masked_lm_acc.item(), global_step=my_step)
             self._log_scalar('acc/retrain_next_sentence_acc', next_sentence_acc.item(), global_step=my_step)
 
         if self.cur_phase == PruningPhase.admm:
-            orig_loss, admm_loss, loss = self.append_admm_loss(loss, my_step, return_losses=True)
-            # print(f'Step {my_step}: orig_loss = {orig_loss.item():.3f}')
-            # admm_loss_vals = [loss.item() for loss in admm_loss.values()]
-            # print(f'Step {my_step}: admm_loss = {admm_loss_vals}')
-            # print("***", [loss.item() for loss in admm_loss.values()])  # [nan, nan, nan...]
-            # print("***", sum(admm_loss.values()).item())  # nan
-            self._log_scalar(f'loss/admm_admm_loss_rho{self.cur_rho}', sum(admm_loss.values()).item(), global_step=my_step)
-            self._log_scalar(f'loss/admm_mixed_loss_rho{self.cur_rho}', loss.item(), global_step=my_step)
+############################################################
+            #orig_loss, admm_loss, loss = self.append_reweighted_loss(loss, my_step, layers, rew_layers, return_losses=True)
+            loss = self.append_reweighted_loss(loss, my_step, layers, rew_layers, return_losses=True)
+############################################################
+
+            #self._log_scalar(f'loss/rew_rew_loss_re{self.re}', sum(admm_loss.values()).item(), global_step=my_step)
+            self._log_scalar(f'loss/rew_mixed_loss_re{self.re}', loss.item(), global_step=my_step)
 
         divisor = args.gradient_accumulation_steps
         if args.gradient_accumulation_steps > 1:
@@ -570,21 +783,12 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             loss.backward()
         average_loss += loss.item()
 
-        # if my_step % 500 == 0:
-        #     self._log_figure('output/barplot', self._plot_avg_output(), global_step=my_step)
-        #
-        # if my_step % 2000 == 0:
-        #     # plot_grad_flow(self.model.named_parameters(), f'grad_step{my_step}.png')
-        #     print(self._calc_avg_grads())
-        #     self._log_histogram('gradient/grad_hist', self._calc_avg_grads(), global_step=my_step)
-        #     self._log_figure('gradient/grad_barplot', self._plot_avg_grads(), global_step=my_step)
-
         self.update_lr(my_step)
         cur_lr = self.optimizer.manual_lr
-        if self.cur_phase == PruningPhase.admm:
-            self._log_scalar(f'lr/admm_lr_rho{self.cur_rho}', cur_lr, global_step=my_step)
-        else:
-            self._log_scalar('lr/retrain_lr', cur_lr, global_step=my_step)
+        #if self.cur_phase == PruningPhase.admm:
+        #    self._log_scalar(f'lr/admm_lr_rho{self.cur_rho}', cur_lr, global_step=my_step)
+        #else:
+        #    self._log_scalar('lr/retrain_lr', cur_lr, global_step=my_step)
 
         if training_steps % args.gradient_accumulation_steps == 0:
             global_step = take_optimizer_step(args, self.optimizer, self.model, overflow_buf, global_step)
@@ -593,11 +797,14 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
                 for n, param in model.named_parameters():
                     if n == name: return param
 
-            model = getattr(self.model, 'module', self.model)
-            for param_name, mask in self.masks.items():
-                get_parameter_by_name(model, param_name).data *= mask
+            try:
 
+                model = getattr(self.model, 'module', self.model)
+                for param_name, mask in self.masks.items():
+                    get_parameter_by_name(model, param_name).data *= mask
 
+            except:
+                pass
         # if global_step >= args.max_steps:
         #     print_final_loss(training_steps, average_loss, divisor)
 
@@ -1203,8 +1410,8 @@ def main():
         prune_manager.setup_learner(model, optimizer, train_loader)
         if args.admm_resume_from_checkpoint:
             prune_manager.resume_from(args.admm_resume_from_checkpoint)
-        prune_manager.admm_prune()
-        prune_manager.masked_retrain()
+        prune_manager.reweighted_prune()
+        prune_manager.masked_retrain_reweighted()
 
 
 if __name__ == "__main__":
