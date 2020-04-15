@@ -8,7 +8,7 @@ re: 0.00001
 
 cross_x: 2
 cross_f: 2
-update_freq: 300 # 30
+#update_freq: 300 # 30
 lr: 0.0001
 admm_steps: 2 # 300
 retrain_steps: 2 # 300
@@ -25,13 +25,13 @@ overwrite: true
 admm_ckpt_steps: 1 # 200
 retrain_ckpt_steps: 1 # 200
 
-fp16: false
+fp16: true
 tensorboard_logdir: tb_logs_reweighted_11
 tensorboard_json_path: tb_logs_reweighted_11/all_scalars.json
 
 accumulate_into_fp16: false
-allreduce_post_accumulation: false
-allreduce_post_accumulation_fp16: false
+allreduce_post_accumulation: true
+allreduce_post_accumulation_fp16: true
 bert_model: bert-base-uncased
 checkpoint_activations: false
 config_file: data/base/bert_config.json
