@@ -369,7 +369,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         're': 0.001,
         'cross_x': 1,
         'cross_f': 1,
-        'update_freq': 300,  # steps
+        #'update_freq': 300,  # steps
         'lr': None,
         'admm_steps': 3000,
         'retrain_steps': 3000,
@@ -416,7 +416,7 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
         torch.distributed.barrier()
 
-        self.update_freq *= args.gradient_accumulation_steps
+        #self.update_freq *= args.gradient_accumulation_steps
         self.admm_steps *= args.gradient_accumulation_steps
         self.retrain_steps *= args.gradient_accumulation_steps
         self.admm_ckpt_steps *= args.gradient_accumulation_steps
@@ -440,6 +440,13 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
         else:
             new_lr = self.lr * ((1 - step / self.retrain_steps) ** 0.5)
             self.optimizer.set_lr(new_lr)
+
+    def update_lr_reweighted2(self,optimizer,step):
+        if step -1 in rew_milestone:
+            new_lr = self.optimizer.manual_lr * 0.98
+        else:
+            new_lr = args.lr
+        self.optimizer.set_lr(new_lr)
 
     # noinspection PyMethodOverriding
     def append_reweighted_loss(self, ce_loss, step, layers, rew_layers, return_losses=False):
@@ -783,8 +790,8 @@ class ProximalBertPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, Debu
             loss.backward()
         average_loss += loss.item()
 
-        self.update_lr(my_step)
-        cur_lr = self.optimizer.manual_lr
+        self.update_lr_reweighted2(self.optimizer,my_step)
+        #cur_lr = self.optimizer.manual_lr
         #if self.cur_phase == PruningPhase.admm:
         #    self._log_scalar(f'lr/admm_lr_rho{self.cur_rho}', cur_lr, global_step=my_step)
         #else:
