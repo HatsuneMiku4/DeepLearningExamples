@@ -1,0 +1,57 @@
+bert_model: bert-base-uncased
+config_file: data/download/google_pretrained_weights/uncased_L-12_H-768_A-12/bert_config.json
+do_lower_case: true
+do_predict: true
+do_train: true
+doc_stride: 128
+gradient_accumulation_steps: 1
+init_checkpoint: pretrained_squad_model.pth.tar
+learning_rate: 3.0e-05
+log_freq: 50
+loss_scale: 0
+max_answer_length: 30
+max_query_length: 64
+max_seq_length: 384
+max_steps: -1.0
+n_best_size: 20
+no_cuda: false
+null_score_diff_threshold: 0.0
+num_train_epochs: 2.0
+old: false
+output_dir: test_finetune_train_squad_v1.1
+predict_batch_size: 3
+predict_file: data/download/squad/v1.1/dev-v1.1.json
+seed: 1
+train_batch_size: 3
+train_file: data/download/squad/v1.1/train-v1.1.json
+verbose_logging: false
+version_2_with_negative: false
+vocab_file: data/download/google_pretrained_weights/uncased_L-12_H-768_A-12/vocab.txt
+warmup_proportion: 0.1
+
+
+sparsity_config: bert_base_sparsity_config.example.yaml
+init_weights_path: pretrained_squad_model.pth.tar  # = init_checkpoint
+
+initial_rho: 0.0001
+rho_num: 1
+initial_lambda: 1
+cross_x: 1
+cross_f: 1
+update_freq: 300
+lr: 3.0e-05  # = learning_rate
+admm_steps: 3000
+retrain_steps: 3000
+
+sparsity_type: threshold
+arch: bert_base_uncased
+optimizer_type: Adam
+dataset_type: SQuAD
+save_dir: squad_admm
+overwrite: False
+admm_ckpt_steps: 500
+retrain_ckpt_steps: 500
+
+fp16: True
+tensorboard_logdir: squad_admm_log
+tensorboard_json_path: squad_admm_log/all_scalars.json

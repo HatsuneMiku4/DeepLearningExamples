@@ -927,11 +927,11 @@ def parse_my_arguments():
 # noinspection PyUnresolvedReferences
 def main():
     global device, args, num_train_optimization_steps
-    parser = argparse.ArgumentParser()
-    ## Required parameters
-    add_arguments(parser)
-    args = parser.parse_args()
-    args_to_yaml(args, 'config_finetune_train_squad_v1.1.yaml.example')
+    # parser = argparse.ArgumentParser()
+    # ## Required parameters
+    # add_arguments(parser)
+    # args = parser.parse_args()
+    # args_to_yaml(args, 'config_finetune_train_squad_v1.1.yaml.example')
 
     config_yaml, local_rank = parse_my_arguments()
     args = args_from_yaml(config_yaml)
@@ -1112,7 +1112,9 @@ def main():
         else:
             train_sampler = DistributedSampler(train_data)
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
+        print(f'len(train_dataloader) = {len(train_dataloader)}')
 
+        """ build ProximalBertPruningManager """
         prune_manager = ProximalBertPruningManager.from_dict(vars(args))
         if is_main_process(): print(prune_manager.to_json_string())
         prune_manager.setup_learner(model, optimizer, train_dataloader)
@@ -1121,54 +1123,54 @@ def main():
         prune_manager.admm_prune()
         prune_manager.masked_retrain()
 
-        model.train()
-        for _ in trange(int(args.num_train_epochs), desc="Epoch"):
-            for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
-                # Terminate early for benchmarking
-
-                if args.max_steps > 0 and global_step > args.max_steps:
-                    break
-
-                if n_gpu == 1:
-                    batch = tuple(t.to(device) for t in batch)  # multi-gpu does scattering it-self
-                input_ids, input_mask, segment_ids, start_positions, end_positions = batch
-                loss = model(input_ids, segment_ids, input_mask, start_positions, end_positions)
-                if n_gpu > 1:
-                    loss = loss.mean()  # mean() to average on multi-gpu.
-                if args.gradient_accumulation_steps > 1:
-                    loss = loss / args.gradient_accumulation_steps
-                if args.fp16:
-                    if args.old:
-                        # noinspection PyUnboundLocalVariable
-                        optimizer.backward(loss)
-                    else:
-                        with amp.scale_loss(loss, optimizer) as scaled_loss:
-                            scaled_loss.backward()
-                else:
-                    loss.backward()
-                # if args.fp16:
-                #    optimizer.backward(loss)
-                # else:
-                #    loss.backward()
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    if args.fp16:
-                        # modify learning rate with special warm up for BERT which FusedAdam doesn't do
-                        if not args.old:
-                            # noinspection PyUnboundLocalVariable
-                            scheduler.step()
-                        else:
-                            lr_this_step = args.learning_rate * warmup_linear(
-                                global_step / num_train_optimization_steps, args.warmup_proportion)
-                            for param_group in optimizer.param_groups:
-                                param_group['lr'] = lr_this_step
-
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    global_step += 1
-                if step % args.log_freq == 0:
-                    # logger.info("Step {}: Loss {}, LR {} ".format(global_step, loss.item(), lr_this_step))
-                    logger.info(
-                        "Step {}: Loss {}, LR {} ".format(global_step, loss.item(), optimizer.param_groups[0]['lr']))
+        # model.train()
+        # for _ in trange(int(args.num_train_epochs), desc="Epoch"):
+        #     for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+        #         # Terminate early for benchmarking
+        #
+        #         if args.max_steps > 0 and global_step > args.max_steps:
+        #             break
+        #
+        #         if n_gpu == 1:
+        #             batch = tuple(t.to(device) for t in batch)  # multi-gpu does scattering it-self
+        #         input_ids, input_mask, segment_ids, start_positions, end_positions = batch
+        #         loss = model(input_ids, segment_ids, input_mask, start_positions, end_positions)
+        #         if n_gpu > 1:
+        #             loss = loss.mean()  # mean() to average on multi-gpu.
+        #         if args.gradient_accumulation_steps > 1:
+        #             loss = loss / args.gradient_accumulation_steps
+        #         if args.fp16:
+        #             if args.old:
+        #                 # noinspection PyUnboundLocalVariable
+        #                 optimizer.backward(loss)
+        #             else:
+        #                 with amp.scale_loss(loss, optimizer) as scaled_loss:
+        #                     scaled_loss.backward()
+        #         else:
+        #             loss.backward()
+        #         # if args.fp16:
+        #         #    optimizer.backward(loss)
+        #         # else:
+        #         #    loss.backward()
+        #         if (step + 1) % args.gradient_accumulation_steps == 0:
+        #             if args.fp16:
+        #                 # modify learning rate with special warm up for BERT which FusedAdam doesn't do
+        #                 if not args.old:
+        #                     # noinspection PyUnboundLocalVariable
+        #                     scheduler.step()
+        #                 else:
+        #                     lr_this_step = args.learning_rate * warmup_linear(
+        #                         global_step / num_train_optimization_steps, args.warmup_proportion)
+        #                     for param_group in optimizer.param_groups:
+        #                         param_group['lr'] = lr_this_step
+        #
+        #             optimizer.step()
+        #             optimizer.zero_grad()
+        #             global_step += 1
+        #         if step % args.log_freq == 0:
+        #             # logger.info("Step {}: Loss {}, LR {} ".format(global_step, loss.item(), lr_this_step))
+        #             logger.info(
+        #                 "Step {}: Loss {}, LR {} ".format(global_step, loss.item(), optimizer.param_groups[0]['lr']))
 
     if args.do_train:
         # Save a trained model and the associated configuration
