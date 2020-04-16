@@ -1297,7 +1297,7 @@ def main():
         print(f'len(train_dataloader) = {len(train_dataloader)}')
 
         """ build ProximalBertPruningManager """
-        prune_manager = ProximalBertPruningManager.from_dict(vars(args))
+        prune_manager = SquadPruningManager.from_dict(vars(args))
         if is_main_process(): print(prune_manager.to_json_string())
         prune_manager.setup_learner(model, optimizer, train_dataloader)
         if args.admm_resume_from_checkpoint:
