@@ -35,8 +35,12 @@ from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
 from apex import amp
+import sys
+#sys.path.append('/pylon5/ccz3a5p/zlkong/Cifar10_ADMM_Pruning_PyTorch')
+sys.path.append('/home/zhk20002/Cifar10_ADMM_Pruning_PyTorch')
+from admm_manager_v2 import ProximalADMMPruningManager, PruningPhase, admm, test_irregular_sparsity, test_irregular_sparsity_train
 
-from admm_manager_v2 import PruningPhase
+#from admm_manager_v2 import PruningPhase
 from schedulers import LinearWarmUpScheduler
 # from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modeling import BertForQuestionAnswering, BertConfig, WEIGHTS_NAME, CONFIG_NAME
@@ -1171,8 +1175,8 @@ def main():
     # Prepare model
     config = BertConfig.from_json_file(args.config_file)
     # Padding for divisibility by 8
-    if config.vocab_size % 8 != 0:
-        config.vocab_size += 8 - (config.vocab_size % 8)
+    #if config.vocab_size % 8 != 0:
+    #    config.vocab_size += 8 - (config.vocab_size % 8)
 
     model = BertForQuestionAnswering(config)
     # model = BertForQuestionAnswering.from_pretrained(args.bert_model,
@@ -1204,8 +1208,8 @@ def main():
         if args.fp16:
             try:
                 # from fused_adam_local import FusedAdamBert as FusedAdam
+                from apex.fp16_utils.fp16_optimizer import FP16_Optimizer
                 from apex.optimizers import FusedAdam
-                from apex.optimizers import FP16_Optimizer
                 # from apex.contrib.optimizers import FP16_Optimizer
             except ImportError:
                 raise ImportError(
@@ -1213,8 +1217,8 @@ def main():
             # import ipdb; ipdb.set_trace()
             optimizer = FusedAdam(optimizer_grouped_parameters,
                                   lr=args.learning_rate,
-                                  bias_correction=False,
-                                  max_grad_norm=1.0)
+                                  bias_correction=False)
+                                  #max_grad_norm=1.0)
 
             if args.loss_scale == 0:
                 if args.old:
