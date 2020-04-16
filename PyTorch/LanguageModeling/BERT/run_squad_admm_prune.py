@@ -44,7 +44,11 @@ from optimization import BertAdam, warmup_linear
 from tokenization import (BasicTokenizer, BertTokenizer, whitespace_tokenize)
 from utils import is_main_process
 
-from run_pretraining_admm import ProximalBertPruningManager
+from run_pretraining_admm import LoggingMixin, CheckpointMixin, TimerMixin, DebugMixin,\
+    ProximalADMMPruningManager, admm, SummaryWriter, test_irregular_sparsity_train, test_irregular_sparsity
+import shutil
+import atexit
+from pathlib import Path
 from args_to_yaml import *
 
 if sys.version_info[0] == 2:
@@ -62,7 +66,179 @@ device = None
 num_train_optimization_steps = None
 
 
-class SquadPruningManager(ProximalBertPruningManager):
+class SquadPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, DebugMixin, ProximalADMMPruningManager):
+    ATTRIBUTES = {
+        'sparsity_config': None,
+        'init_weights_path': None,
+
+        'initial_rho': 0.0001,
+        'rho_num': 1,
+        'initial_lambda': 1,
+        'cross_x': 1,
+        'cross_f': 1,
+        'update_freq': 300,  # steps
+        'lr': None,
+        'admm_steps': 3000,
+        'retrain_steps': 3000,
+
+        'sparsity_type': 'threshold',
+        'arch': 'bert_base_uncased',
+        'optimizer_type': 'NVLAMB',
+        'dataset_type': 'EnwikiBookcorpus',
+        'save_dir': None,
+        'overwrite': False,
+        'admm_ckpt_steps': 500,
+        'retrain_ckpt_steps': 500,
+
+        'fp16': True,
+        'tensorboard_logdir': '.',
+        'tensorboard_json_path': './all_scalars.json',
+    }
+
+    # noinspection PyMethodOverriding
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cur_rho = None
+        self.cur_step = None
+        self.writer = None  # tensorboard writer
+        self.csv_writers = dict()  # {logger_name: csv_logger}
+        self._timer_iter = self._timer_gen()
+        self.sparsity_tester = test_irregular_sparsity
+        self.sparsity_tester_train = test_irregular_sparsity_train
+        atexit.register(self._cleanup)
+
+    def _cleanup(self):
+        if self.writer:
+            self.writer.export_scalars_to_json(self.tensorboard_json_path)
+            self.writer.close()
+        if getattr(self, 'forward_handles', None):
+            self._remove_forward_hooks()
+
+    # noinspection PyMethodOverriding
+    def setup_learner(self, model, optimizer, train_loader):
+        if is_main_process():
+            if Path(self.tensorboard_logdir).is_dir() and self.overwrite:
+                shutil.rmtree(self.tensorboard_logdir)
+            # Path(self.tensorboard_logdir).mkdir(exist_ok=False, parents=True)
+            self.writer = SummaryWriter(logdir=self.tensorboard_logdir, flush_secs=60)
+        torch.distributed.barrier()
+
+        self.update_freq *= args.gradient_accumulation_steps
+        self.admm_steps *= args.gradient_accumulation_steps
+        self.retrain_steps *= args.gradient_accumulation_steps
+        self.admm_ckpt_steps *= args.gradient_accumulation_steps
+        self.retrain_ckpt_steps *= args.gradient_accumulation_steps
+
+        self.model = model
+        self.optimizer = optimizer
+        self.train_loader = train_loader
+
+        if is_main_process():
+            self._setup_forward_hooks()  # debugging
+
+    def update_lr(self, step):
+        if self.cur_phase == PruningPhase.admm:
+            new_lr = admm.admm_adjust_learning_rate_per_step(
+                step, args=argparse.Namespace(
+                    lr=self.lr, admm_update_freq=self.update_freq,
+                )
+            )
+            self.optimizer.set_lr(new_lr)
+        else:
+            new_lr = self.lr * ((1 - step / self.retrain_steps) ** 0.5)
+            self.optimizer.set_lr(new_lr)
+
+    # noinspection PyMethodOverriding
+    def append_admm_loss(self, loss, step, return_losses=False):
+        assert self.cur_phase == PruningPhase.admm
+        args = argparse.Namespace(
+            admm=True, verbose=True,
+            admm_update_freq=self.update_freq,
+            lamda=self.initial_lambda,
+            sparsity_type=self.sparsity_type,
+            cross_x=self.cross_x,
+            cross_f=self.cross_f,
+        )
+        writer = self.writer if is_main_process() else None
+        admm.proximal_update_per_step(args, self.admm, self.model, step, writer=writer)
+        admm.admm_update_per_step(args, self.admm, self.model, step)
+        losses = admm.append_admm_loss(args, self.admm, self.model, loss)
+        loss, admm_loss, mixed_loss = losses
+        if not return_losses:
+            return mixed_loss
+        else:
+            return losses
+
+    def admm_prune(self):
+        resumed = self.cur_phase is not None
+        if self.cur_phase == PruningPhase.masked_retrain:
+            print('ADMM pruning has finished. Skipping admm_prune...')
+            return
+        if self.cur_phase == PruningPhase.admm:
+            init_rho_idx = [self._calc_current_rho(i) for i in range(self.rho_num)].index(self.cur_rho)
+        else:
+            init_rho_idx = 0
+        self.prune()
+        for i in range(init_rho_idx, self.rho_num):
+            if not resumed or i > init_rho_idx:  # do not skip initialization in next iteration
+                self._load_ckpt_admm_prune(i)
+                current_rho = self._calc_current_rho(i)
+                current_lamda = self._calc_current_lamda(i)
+                self._init_admm(rho=current_rho, lamda=current_lamda)
+                admm.admm_initialization(argparse.Namespace(
+                    admm=(self.cur_phase == PruningPhase.admm),
+                    sparsity_type=self.sparsity_type,
+                ), self.admm, self.model)  # initialize Z variable
+            else:
+                current_rho = self.cur_rho
+            self._train_admm_prune(current_rho)
+            self.sparsity_tester_train(self.model)
+
+    def masked_retrain(self):
+        resumed = self.cur_phase == PruningPhase.masked_retrain
+        if not resumed:
+            self.retrain()
+            self._load_ckpt_masked_retrain()
+            self._init_admm(rho=self.initial_rho, lamda=self.initial_lambda)
+            args = argparse.Namespace(sparsity_type=self.sparsity_type)
+            model = getattr(self.model, 'module', self.model)
+            admm.hard_prune(args, self.admm, model)
+        if is_main_process():
+            self.sparsity_tester(self.model)
+        self._train_masked_retrain(resumed)
+        if is_main_process():
+            self.sparsity_tester(self.model)
+
+    def _init_admm(self, rho, lamda):
+        self.admm = admm.ADMM(self.model, file_name=self.sparsity_config, rho=rho, lamda=lamda)
+
+    def _train_masked_retrain(self, resumed=False):
+        # resumed = self.cur_phase == PruningPhase.masked_retrain
+        init_step = 0 if not resumed else self.cur_step
+        self.setup_masking_hooks()
+        for step in range(init_step, self.retrain_steps):
+            self._timer_step()
+            self._train_one_step(step)
+            if step % self.retrain_ckpt_steps == 0 and is_main_process():
+                self.save_checkpoint_retrain(step=step)
+                self.sparsity_tester(self.model)
+        if is_main_process():
+            self.save_checkpoint_retrain(step=self.retrain_steps)
+        torch.distributed.barrier()
+        self.remove_masking_hooks()
+
+    def _train_admm_prune(self, current_rho):
+        resumed = self.cur_rho == current_rho
+        init_step = 0 if not resumed else self.cur_step
+        for step in range(init_step, self.admm_steps):
+            self._timer_step()
+            self._train_one_step(step)
+            if step % self.admm_ckpt_steps == 0 and is_main_process():
+                self.save_checkpoint_prune(rho=current_rho, step=step)
+        if is_main_process():
+            self.save_checkpoint_prune(rho=current_rho)
+        torch.distributed.barrier()
+
     def _train_one_step(self, my_step):
         global args, device, num_train_optimization_steps
         batch = next(self.train_loader)
@@ -1003,7 +1179,9 @@ def main():
     # cache_dir=os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed_{}'.format(args.local_rank)))
     if is_main_process():
         print("LOADING CHECKOINT")
-    model.load_state_dict(torch.load(args.init_checkpoint, map_location='cpu')["model"], strict=False)
+    state_dict = torch.load(args.init_checkpoint, map_location='cpu')
+    state_dict = state_dict.get('model', state_dict)
+    model.load_state_dict(state_dict, strict=False)
     if is_main_process():
         print("LOADED CHECKPOINT")
     model.to(device)
