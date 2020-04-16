@@ -44,14 +44,14 @@ admm_steps: 3000
 retrain_steps: 3000
 
 sparsity_type: threshold
-arch: bert_base_uncased
+arch: bert_base_uncased  # = bert_model
 optimizer_type: Adam
 dataset_type: SQuAD
-save_dir: squad_admm
+save_dir: test_finetune_train_squad_v1.1  # = output_dir
 overwrite: False
 admm_ckpt_steps: 500
 retrain_ckpt_steps: 500
 
 fp16: True
-tensorboard_logdir: squad_admm_log
-tensorboard_json_path: squad_admm_log/all_scalars.json
+tensorboard_logdir: test_finetune_train_squad_v1.1_log
+tensorboard_json_path: test_finetune_train_squad_v1.1_log/all_scalars.json
