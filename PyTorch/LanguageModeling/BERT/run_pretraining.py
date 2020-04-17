@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader, RandomSampler, Dataset
 
 from apex import amp
 
+from args_to_yaml import args_from_yaml
 from modeling import BertForPreTraining, BertConfig
 from optimization import BertLAMB
 
@@ -404,8 +405,20 @@ def take_optimizer_step(args, optimizer, model, overflow_buf, global_step):
     return global_step
 
 
+def parse_my_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config_yaml', type=str, help="yaml configuration file for pretraining")
+    parser.add_argument("--local_rank", type=int, default=-1, help="local_rank for distributed training on gpus")
+    args = parser.parse_known_args()[0]
+    return args.config_yaml, args.local_rank
+
+
 def main():
-    args = parse_arguments()
+    config_yaml, local_rank = parse_my_arguments()
+    args = args_from_yaml(config_yaml)
+    args.local_rank = local_rank
+
+    # args = parse_arguments()
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)

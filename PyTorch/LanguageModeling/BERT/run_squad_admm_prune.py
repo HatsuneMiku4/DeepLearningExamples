@@ -137,8 +137,8 @@ class SquadPruningManager(LoggingMixin, CheckpointMixin, TimerMixin, DebugMixin,
         self.optimizer = optimizer
         self.train_loader = train_loader
 
-        if is_main_process():
-            self._setup_forward_hooks()  # debugging
+        # if is_main_process():
+        #     self._setup_forward_hooks()  # debugging
 
     def update_lr(self, step):
         if self.cur_phase == PruningPhase.admm:
@@ -1295,6 +1295,13 @@ def main():
             train_sampler = DistributedSampler(train_data)
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
         print(f'len(train_dataloader) = {len(train_dataloader)}')
+
+        def infinite_data_loader(data_loader):
+            while True:
+                for batch in data_loader:
+                    yield data_loader
+
+        train_dataloader = infinite_data_loader(train_dataloader)
 
         """ build ProximalBertPruningManager """
         prune_manager = SquadPruningManager.from_dict(vars(args))
